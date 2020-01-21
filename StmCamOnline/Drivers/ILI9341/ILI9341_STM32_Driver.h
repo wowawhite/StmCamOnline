@@ -88,11 +88,11 @@
 #include <stm32f4xx_hal.h>
 
 
-#define ILI9341_SCREEN_HEIGHT 240 
-#define ILI9341_SCREEN_WIDTH 	320
+#define ILI9341_SCREEN_HEIGHT 320
+#define ILI9341_SCREEN_WIDTH 	480
 
 //SPI INSTANCE
-#define HSPI_INSTANCE							&hspi3
+#define HSPI_INSTANCE							&hspi1
 
 
 //CHIP SELECT PIN AND PORT, STANDARD GPIO
@@ -129,6 +129,7 @@
 #define ORANGE      0xFD20      
 #define GREENYELLOW 0xAFE5     
 #define PINK        0xF81F
+#define TRANSPARENT 0x80000000
 
 #define SCREEN_VERTICAL_1			0
 #define SCREEN_HORIZONTAL_1		1
@@ -136,8 +137,8 @@
 #define SCREEN_HORIZONTAL_2		3
 
 //void ILI9341_SPI_Init(void);
-extern uint16_t LCD_HEIGHT;
-extern uint16_t LCD_WIDTH;
+extern volatile uint16_t LCD_HEIGHT;
+extern volatile uint16_t LCD_WIDTH;
 
 extern void ILI9341_SPI_Send(unsigned char SPI_Data);
 extern void ILI9341_Write_Command(uint8_t Command);

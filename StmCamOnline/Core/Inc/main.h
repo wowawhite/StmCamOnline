@@ -68,14 +68,6 @@ void Error_Handler(void);
 #define USB_TX_GPIO_Port GPIOA
 #define USB_RX_Pin GPIO_PIN_3
 #define USB_RX_GPIO_Port GPIOA
-#define TP_SCK_BITBANG_Pin GPIO_PIN_5
-#define TP_SCK_BITBANG_GPIO_Port GPIOA
-#define TP_MISO_BITBANG_Pin GPIO_PIN_6
-#define TP_MISO_BITBANG_GPIO_Port GPIOA
-#define TP_MOSI_BITBANG_Pin GPIO_PIN_7
-#define TP_MOSI_BITBANG_GPIO_Port GPIOA
-#define LCD_SS_Pin GPIO_PIN_1
-#define LCD_SS_GPIO_Port GPIOB
 #define TP_BUSY_Pin GPIO_PIN_10
 #define TP_BUSY_GPIO_Port GPIOB
 #define ETHERNET_CS_Pin GPIO_PIN_7

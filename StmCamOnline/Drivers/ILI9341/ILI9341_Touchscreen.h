@@ -86,17 +86,20 @@ if(TP_Touchpad_Pressed())
 #include <stm32f4xx_hal.h>
 
 
-//    PA5     ------> SPI1_SCK
-//    PA6     ------> SPI1_MISO
-//    PA7     ------> SPI1_MOSI
+    /**SPI1 GPIO Configuration
+    PA5     ------> SPI1_SCK
+    PA6     ------> SPI1_MISO
+    PA7     ------> SPI1_MOSI
+    */
+//    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7); TOUCH not tested!
 #define TP_CLK_PORT								GPIOA
-#define TP_CLK_PIN								TP_SCK_BITBANG_Pin
+#define TP_CLK_PIN								GPIO_PIN_5
 
 #define TP_MISO_PORT							GPIOA
-#define TP_MISO_PIN								TP_MISO_BITBANG_Pin
+#define TP_MISO_PIN								GPIO_PIN_6
 
 #define TP_MOSI_PORT							GPIOA
-#define TP_MOSI_PIN								TP_MOSI_BITBANG_Pin
+#define TP_MOSI_PIN								GPIO_PIN_7
 
 #define TP_CS_PORT								GPIOB
 #define TP_CS_PIN								TP_CS_Pin

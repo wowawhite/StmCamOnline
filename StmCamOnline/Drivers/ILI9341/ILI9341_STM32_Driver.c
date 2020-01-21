@@ -90,13 +90,14 @@
 /* Global Variables ------------------------------------------------------------------*/
 //volatile uint16_t LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
 //volatile uint16_t LCD_WIDTH	 = ILI9341_SCREEN_WIDTH;
-//#define ILI9341_SCREEN_HEIGHT 240
-//#define ILI9341_SCREEN_WIDTH 	320
+//#define ILI9341_SCREEN_HEIGHT 320
+//#define ILI9341_SCREEN_WIDTH 	480
 
+volatile uint16_t LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
+volatile uint16_t LCD_WIDTH = ILI9341_SCREEN_WIDTH;
 
-
-//LCD_HEIGHT = 320;
-//LCD_WIDTH = 240;
+//LCD_HEIGHT;
+//LCD_WIDTH;
 
 /* Initialize SPI */
 //void ILI9341_SPI_Init(void)
@@ -116,6 +117,7 @@ void ILI9341_SPI_Send(unsigned char SPI_Data)
 void ILI9341_Write_Command(uint8_t Command)
 {
 	HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+
 	HAL_GPIO_WritePin(LCD_DC_PORT, LCD_DC_PIN, GPIO_PIN_RESET);
 	ILI9341_SPI_Send(Command);
 	HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);

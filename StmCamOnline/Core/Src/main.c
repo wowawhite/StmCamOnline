@@ -216,6 +216,7 @@ inline uint32_t SwapByteOrder_32(uint32_t a)  // ok
   * @brief  Swapping 4 bytes of uint8_t array from big endian to little endian.
   * @retval uint32_t
   */
+//inline uint32_t byteswap2little(uint8_t *value)  // test it
 inline uint32_t byteswap2little(uint8_t *value)  // test it
 {
 	uint32_t tmpint;
@@ -291,9 +292,9 @@ void lcdtest(void)
 	uint32_t x, y;
 	x = 0;
 	y = 0;
-	while (y < 240)
+	while (y < 200)
 	{
-	while ((x < 320) && (y < 240))
+	while ((x < 200) && (y < 200))
 	{
 
 		if(x % 2)
@@ -312,9 +313,9 @@ void lcdtest(void)
 	y = 0;
 
 
-	while (y < 240)
+	while (y < 200)
 	{
-	while ((x < 320) && (y < 240))
+	while ((x < 200) && (y < 200))
 	{
 
 		if(y % 2)
@@ -329,6 +330,7 @@ void lcdtest(void)
 		x = 0;
 	}
 	HAL_Delay(2000);
+	usb_transmit_string("\r\nRepeating\r\n");
 }
 
 
@@ -458,6 +460,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   MX_SPI3_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   // start hardware stuff
 
@@ -503,16 +506,16 @@ int main(void)
 //	volatile uint8_t binarydata_buffer0[CAM_BUF_SIZE];
 //	volatile uint8_t binarydata_buffer1[CAM_BUF_SIZE];
 //	volatile float floatframe_buffer[CAM_FLOAT_SIZE];
-      HAL_Delay(300);
-
-
-	starttime = HAL_GetTick();  // milliseconds precision
-
-
-
-
-	  get_camdata();
-	  arrayreshaping(binarydata_buffer0);
+//      HAL_Delay(300);
+//
+//
+//	starttime = HAL_GetTick();  // milliseconds precision
+//
+//
+//
+//
+//	  get_camdata();
+//	  arrayreshaping(binarydata_buffer0);
 
 
 //	  switch(binarydata_flag)
@@ -529,16 +532,16 @@ int main(void)
 //			usb_transmit_string("\r\n Canny detector error\r\n");
 //			break;
 //	}
-	  canny_bad_solution();
+//	  canny_bad_solution();
 
 
 
-
-	  stoptime = HAL_GetTick();
-	  difftime = stoptime - starttime;
-	  usb_transmit_string("\n\rTime: ");
-	  usb_transmit_int(difftime);
-	  usb_transmit_string("\n\r");
+//
+//	  stoptime = HAL_GetTick();
+//	  difftime = stoptime - starttime;
+//	  usb_transmit_string("\n\rTime: ");
+//	  usb_transmit_int(difftime);
+//	  usb_transmit_string("\n\r");
 
 
 //	  testmyarray(binarydata_flag);
