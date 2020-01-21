@@ -188,8 +188,10 @@ void ILI9341_Set_Rotation(uint8_t Rotation)
 				break;
 			case SCREEN_HORIZONTAL_2:
 				ILI9341_Write_Data(0x40|0x80|0x20|0x08);
+//				LCD_WIDTH  = 320;
+//				LCD_HEIGHT = 240;
 				LCD_WIDTH  = 320;
-				LCD_HEIGHT = 240;
+				LCD_HEIGHT = 480;
 				break;
 			default:
 				//EXIT IF SCREEN ROTATION NOT VALID!
@@ -339,7 +341,7 @@ void ILI9341_Init(void)
 	ILI9341_Write_Command(0x29);
 	
 	//STARTING ROTATION
-	ILI9341_Set_Rotation(SCREEN_VERTICAL_1);
+	ILI9341_Set_Rotation(SCREEN_VERTICAL_2);
 }
 
 //INTERNAL FUNCTION OF LIBRARY, USAGE NOT RECOMENDED, USE Draw_Pixel INSTEAD
