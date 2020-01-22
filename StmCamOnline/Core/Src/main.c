@@ -175,7 +175,7 @@ float canny_bad_solution(void);
 // experimental stuff here:
 
 uint32_t depth_yield(float input);
-
+uint32_t edge_yield(float input);
 
 /**
   * @brief  Low level check if float is negative value.
@@ -267,39 +267,7 @@ uint32_t pun2int(const uint8_t *buf) {
 
 
 
-void lcdtest(void)
-{
-//	ILI9341_Fill_Screen(WHITE);
-//	ILI9341_Set_Rotation(SCREEN_HORIZONTAL_2);
-	//  text, x, y, color, size, background
-//	ILI9341_Draw_Text("Slow draw by selecting", 120, 10, BLACK, 2, GREEN);
-//	ILI9341_Draw_Text("and adressing pixels", 100, 100, BLACK, 2, WHITE);
-//	HAL_Delay(2000);
-	ILI9341_Fill_Screen(WHITE);
-//	HAL_Delay(10);
-	uint32_t start_x, start_y, stop_x, stop_y, scale;  // y = high, x = width
-	scale = 1;
-//	start_x = 48/scale+1;
-//	start_y = 60/scale+1;
-//	stop_x = 432/scale;
-//	stop_y = 310/scale;
-	start_x = 0;
-	start_y = 0;
-	stop_x = 320;
-	stop_y = 200;
 
-	while (start_y < stop_y)
-	{
-//		while ((y < 432) && (x < 310))
-		while ((start_y < stop_y) && (start_x < stop_x))
-		{
-			ILI9341_Draw_Pixel(start_y, start_x, BLACK);
-			start_x++;
-		}
-		start_y++;
-		start_x = 0;
-	}
-}
 
 
 void drawsquare(float inputvar, uint32_t position)
@@ -313,23 +281,18 @@ void drawsquare(float inputvar, uint32_t position)
 
 		ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
 	}
-
-
 }
 
 void drawedge(float inputvar, uint32_t position)
 {
-	if(LCDmode_flag = 0)
+	if(LCDmode_flag == 1)
 	{
 		uint16_t zoom = 4;
 		uint16_t row ,column;
-		column = (position / 64)*zoom;  // y
-		row = (position % 64)*zoom;  // x
-
-		ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
+		column = (position / 63)*zoom;  // y
+		row = (position % 63)*zoom;  // x
+		ILI9341_Draw_Rectangle(column,row , zoom, zoom, edge_yield(inputvar));
 	}
-
-
 }
 
 
@@ -756,6 +719,20 @@ uint32_t depth_yield(float input)
 	}
 }
 
+uint32_t edge_yield(float input)
+{
+	// edge thredshold hysteresis
+	const float t0 = -0.01;
+	const float t1 = 0.15;
+
+	if(input<t0) {
+		return RED;
+	} else if (input<t1 && input>t0) {
+		return BLACK;
+	} else {
+		return WHITE;
+	}
+}
 
 int32_t get_camdata(void)
 {
@@ -782,7 +759,7 @@ int32_t get_camdata(void)
      // send data here:
     		ret_send = send(sn, &testch, 1);
     		// wait here between response
-    	    HAL_Delay(10);  // delay for network reply needed
+    	    HAL_Delay(5);  // delay for network reply needed
 
 
 
@@ -870,248 +847,6 @@ int32_t get_camdata(void)
 
 
 // original returning edge array. mod version shall return edge
-float canny_edge_mod(const float *floatbuf)
-{
-
-	// detection hysteresis min, max
-	const float tmin = 0.5;
-	const float tmax = 1.0;
-	//gauss filter sigma parameter
-//	const float sigma = 1;  // not used. only needed for gauss filter
-
-	// matrix shape
-
-    const int nx = 64;
-    const int ny = 50;
-
-//    int MAX_BRIGHTNESS = 255;  // was
-//    uint MAX_BRIGHTNESS = 255;  // max float brightness
-
-    // some useful error checking
-
-
-    // memory allocation does not work as expected
-	float *in = calloc(nx * ny * sizeof(float), sizeof(float));
-    float *G = calloc(nx * ny * sizeof(float), sizeof(float));
-    float *after_Gx = calloc(nx * ny * sizeof(float), sizeof(float));
-    float *after_Gy = calloc(nx * ny * sizeof(float), sizeof(float));
-    float *nms = calloc(nx * ny * sizeof(float), sizeof(float));
-    float *out = malloc(nx * ny * sizeof(float));
-
-
-    	in = floatbuf;
-
-//	some useless error checking
-//    if (G == NULL || after_Gx == NULL || after_Gy == NULL ||
-//        nms == NULL || out == NULL) {
-//        fprintf(stderr, "canny_edge_detection:"
-//                " Failed memory allocation(s).\n");
-//        exit(1);  // check if error occured
-//    }
-
-
-
-//    gaussian_filter(in, out, nx, ny, sigma);
-	const float Gx[] = {-1, 0, 1,
-						-2, 0, 2,
-						-1, 0, 1};
-
-    // sobel operator for convolution
-//    const float Gy[] = { 1, 2, 1,
-//                         0, 0, 0,
-//                        -1,-2,-1};
-    const float Gy[] = { 1, 1, 1,
-                         0, 0, 0,
-                        -1,-1,-1};
-
-//    convolution(in, after_Gy, Gy, nx, ny, 3, false);
-// this is convolution() copypasted:
-    	const int kn = 3;  // kernel size
-        const int khalf = kn / 2;  // half of kernel. "center" of Gy matrix
-
-
-
-//        float min = FLT_MAX, max = -FLT_MAX;  // min and max float values for normalization
-
-//        if (normalize)  // if float value is overfloating
-//            for (int m = khalf; m < nx - khalf; m++)
-//                for (int n = khalf; n < ny - khalf; n++) {
-//                    float pixel = 0.0;
-//                    size_t c = 0;
-//                    for (int j = -khalf; j <= khalf; j++)
-//                        for (int i = -khalf; i <= khalf; i++) {
-//                            pixel += in[(n - j) * nx + m - i] * kernel[c];
-//                            c++;
-//                        }
-//                    if (pixel < min)
-//                        min = pixel;
-//                    if (pixel > max)
-//                        max = pixel;
-//                    }
-        // iterating over input_array from "center"
-        // convolution of input matrix and sobel operator
-        // !bug - probably wrong array shape
-
-        for (int m = khalf; m < nx - khalf; m++)
-        {
-            for (int n = khalf; n < ny - khalf; n++)
-            {
-                float pixel = 0.0;
-                size_t c = 0;
-                for (int j = -khalf; j <= khalf; j++)
-                {
-                    for (int i = -khalf; i <= khalf; i++)
-                    {
-                    	// multiply input_array with kernel matrix
-                        pixel += in[(n - j) * nx + m - i] * Gy[c];
-                        c++;
-                    }
-
-                    //
-                    // result of convolution is a sobel operator matrix
-                    after_Gy[n * nx + m] = pixel;
-                }
-            }
-    	}
-
-
-//    calculate intensity gradient
-        // not used since gradient calculation is only made in y dir
-//    for (int i = 1; i < nx - 1; i++)
-//        for (int j = 1; j < ny - 1; j++) {
-//            const int c = i + nx * j;
-//            // G[c] = abs(after_Gx[c]) + abs(after_Gy[c]);
-//            G[c] = (pixel_t)hypot(after_Gx[c], after_Gy[c]);
-//        }
-
-    // magnitude calculation disabled
-    // Non-maximum suppression, straightforward implementation.
-
-    // calculate surrounding
-    for (int i = 1; i < nx - 1; i++)
-        for (int j = 1; j < ny - 1; j++) {
-            const int c = i + nx * j;
-            const int nn = c - nx;
-            const int ss = c + nx;
-            const int ww = c + 1;
-            const int ee = c - 1;
-            const int nw = nn + 1;
-            const int ne = nn - 1;
-            const int sw = ss + 1;
-            const int se = ss - 1;
-
-//            const float dir = (float)(fmod(atan2(after_Gy[c], after_Gx[c]) + M_PI, M_PI) / M_PI) * 8;
-            // calculate intensity vector direction. we use only Gy direction, so this one is not needed
-            // if values on same axis differ too much, then nms[c] = G[c], else nms[c] = 0,
-            //
-            G = after_Gy;
-            const float dir = (fmodf(after_Gy[c] + M_PI, M_PI) / M_PI) * 8.0f ;
-            if (((dir <= 1 || dir > 7) && G[c] > G[ee] &&
-                 G[c] > G[ww]) || // 0 deg
-                ((dir > 1 && dir <= 3) && G[c] > G[nw] &&
-                 G[c] > G[se]) || // 45 deg
-                ((dir > 3 && dir <= 5) && G[c] > G[nn] &&
-                 G[c] > G[ss]) || // 90 deg
-                ((dir > 5 && dir <= 7) && G[c] > G[ne] &&
-                 G[c] > G[sw]))   // 135 deg
-                nms[c] = G[c];
-            else
-                nms[c] = 0;
-        }
-
-    // Reuse array
-        // used as a stack. nx*ny/2 elements should be enough.
-//        int *edges = (int*) after_Gy;
-//
-//        // filling *out and *edges arrays with zeros for reuse
-//        memset(out, 0, sizeof(float) * nx * ny);
-//        memset(edges, 0, sizeof(float) * nx * ny);
-//
-//        // Tracing edges with hysteresis . Non-recursive implementation.
-//        size_t c = 1;
-//        for (int j = 1; j < ny - 1; j++)
-//        {
-//        	for (int i = 1; i < nx - 1; i++)
-//            {
-//            	// if nms is over thresold and out is zero(why is this checked?) -> edge detected
-//                if (nms[c] >= tmax && out[c] == 0)
-//                {
-//                    out[c] = FLT_MAX;
-//
-//                    int nedges = 1;
-//                    edges[0] = c;  //c=1
-//
-//                    do {
-//                        nedges--;  // nedges = 0
-//                        const int t = edges[nedges];  // t =
-//
-//                        int nbs[8]; // neighbours
-//                        nbs[0] = t - nx;     // nn
-//                        nbs[1] = t + nx;     // ss
-//                        nbs[2] = t + 1;      // ww
-//                        nbs[3] = t - 1;      // ee
-//                        nbs[4] = nbs[0] + 1; // nw
-//                        nbs[5] = nbs[0] - 1; // ne
-//                        nbs[6] = nbs[1] + 1; // sw
-//                        nbs[7] = nbs[1] - 1; // se
-//
-//                        // iterating neighbors.
-//                        for (int k = 0; k < 8; k++)
-//                        {
-//                        	//if neighbors are above tmin -> edge detected
-//                        	if (nms[nbs[k]] >= tmin && out[nbs[k]] == 0)
-//                            {
-//                                out[nbs[k]] = FLT_MAX;
-//                                edges[nedges] = nbs[k];
-//                                nedges++;
-//                                set_LED(true);  // enable led
-//                                usb_transmit_string("\r\nEDGE!\r\n");
-//                            } else {
-////                            	set_LED(false);  // disable led
-//                            }
-//                        }
-//
-//                        //do iterate until end of
-//                    } while (nedges > 0);
-//                } else {
-////                	set_LED(false);  // disable led
-//                }
-//                c++;
-//            }
-//        }
-
-        for(size_t i = 1; i < 1000; i++)
-        {
-
-
-//        	if((after_Gy[i] -after_Gy[i-1]) >= tmin &&
-//        			(after_Gy[i] -after_Gy[i-1]) <= tmax)
-        	if((after_Gy[i] -after_Gy[i-1]) >= tmin )
-        	{
-//        		usb_transmit_string("\r\i - ");
-//        		usb_transmit_uint(i);
-//        		usb_transmit_string(" - ");
-//
-//				usb_transmit_float(after_Gy[i]);
-//				usb_transmit_string("\r\n");
-//        		usb_transmit_string("\r\nEDGE!\r\n");
-
-        		set_LED(true);
-//        		HAL_Delay(100);
-        	}else {
-        		set_LED(false);
-        	}
-
-        }
-        // free reserved memory
-        free(after_Gx);
-        free(after_Gy);
-        free(G);
-        free(nms);
-
-//        return out;
-}
-
 
 
 void convolution(const float *in, float *out, const float *kernel,
@@ -1241,7 +976,7 @@ float canny_bad_solution(void)
 	size_t pixel_position = row * nx + column;
 
 
-
+	// gradient calculation in y direction
         for (int m = khalf; m < nx - khalf; m++)  // m from 1 to 63
         {
             for (int n = khalf; n < ny - khalf; n++)  // n from 1 to 49
@@ -1255,28 +990,18 @@ float canny_bad_solution(void)
                     {
                     	// multiply input_array with kernel matrix
 
-//                    	outint = ((n - j) * nx + m - i);
-//            			usb_transmit_string("(n - j) * nx + m - i = ");
-//            			usb_transmit_int(outint);  //
-//            			usb_transmit_string(" - ");
-//            			usb_transmit_float(pixel);  //
-//            			usb_transmit_string("\n\r");
-//            			HAL_Delay(300);
-
-                        pixel += in[(n - j) * nx + m - i] * Gy[c];  // bug here> access in[i]
+                        pixel += in[(n - j) * nx + m - i] * Gy[c];
                         c++;
-//                        if(pixel  )
-
-
-
                     }
                     //
                     // result of convolution is a gradient matrix
                     after_Gy[n * nx + m] = pixel;
+                    // draw pixel on LCD
+                    drawedge(pixel, n * nx + m);
                 }
             }
     	}
-//
+//			// gradient calculation in x direction (not in use)
 //        for (int m = khalf; m < nx - khalf; m++)
 //        {
 //        	{
@@ -1309,21 +1034,21 @@ float canny_bad_solution(void)
 
 //	usb_transmit_string("\n\roverwritten\n\r");
 
-    	float outfloat = 0.0;
-//    	int outint;
-//    	//	int j = (3199-95);
-    		int j = 300;
-    		for(int i = j; i <j+90; i++)  // ok
-    		{
-    			usb_transmit_string("i = ");
-    			usb_transmit_int(i);  //
-    			usb_transmit_string(" - ");
-    			outfloat = after_Gy[i];
-    			usb_transmit_float(outfloat);  //
-//    			usb_transmit_int(outint);  //
-
-    			usb_transmit_string("\n\r");
-    		}
+//    	float outfloat = 0.0;
+////    	int outint;
+////    	//	int j = (3199-95);
+//    		int j = 300;
+//    		for(int i = j; i <j+90; i++)  // ok
+//    		{
+//    			usb_transmit_string("i = ");
+//    			usb_transmit_int(i);  //
+//    			usb_transmit_string(" - ");
+//    			outfloat = after_Gy[i];
+//    			usb_transmit_float(outfloat);  //
+////    			usb_transmit_int(outint);  //
+//
+//    			usb_transmit_string("\n\r");
+//    		}
 //    		HAL_Delay(300);
 //    		testfloatarray();
 //    		for(int i = 50; i <60; i++)  // ok
