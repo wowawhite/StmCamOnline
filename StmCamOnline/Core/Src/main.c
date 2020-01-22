@@ -45,7 +45,7 @@
 #include "w5500.h"
 // those are for LCD + Touch
 #include "ILI9341_STM32_Driver.h"
-//#include "ILI9341_GFX.h"
+#include "ILI9341_GFX.h"
 //#include "snow_tiger.h"
 
 /* USER CODE END Includes */
@@ -104,9 +104,9 @@ char cam_request_radial = 'D';
 char cam_request_close = 'q';
 
 
-//typedef float pixel_t;
 volatile uint8_t binarydata_flag = 0;
 
+uint8_t LCDmode_flag = 0;
 uint8_t binarydata_buffer0[CAM_BUF_SIZE];
 
 volatile float floatframe_buffer[CAM_FLOAT_SIZE];
@@ -163,7 +163,7 @@ void spi_rb_burst(uint8_t *buf, uint16_t len);
 void spi_wb_burst(uint8_t *buf, uint16_t len);
 
 
-
+void checkpushbutton(void);
 
 /**
   * @brief  Read Data from camera vie W5500 on SPI.
@@ -186,19 +186,7 @@ bool is_negative(float x) {  // fast check for negative float // only big endian
     return signbit(x);
 }
 
-void checkruntime(void (*fptr)())
-{
-	uint32_t starttime;
-	uint32_t stoptime;
-	uint32_t difftime;
-	usb_transmit_string("Time: ");
-	starttime = HAL_GetTick();  // milliseconds precision
-	fptr();   // function pointer
-	stoptime = HAL_GetTick();
-	difftime = stoptime - starttime;
-	usb_transmit_int(difftime);
-	usb_transmit_string("\n\r");
-}
+
 
 // reordering from big endian to little endian
 /**
@@ -278,6 +266,7 @@ uint32_t pun2int(const uint8_t *buf) {
   */
 
 
+
 void lcdtest(void)
 {
 //	ILI9341_Fill_Screen(WHITE);
@@ -310,21 +299,39 @@ void lcdtest(void)
 		start_y++;
 		start_x = 0;
 	}
-
-
-//	HAL_Delay(2000);
-//	usb_transmit_string("\r\nRepeating\r\n");
 }
+
 
 void drawsquare(float inputvar, uint32_t position)
 {
-	uint16_t zoom = 4;
-	uint16_t row ,column;
-	column = (position / 64)*zoom;  // y
-	row = (position % 64)*zoom;  // x
+	if(LCDmode_flag == 0)
+	{
+		uint16_t zoom = 4;
+		uint16_t row ,column;
+		column = (position / 64)*zoom;  // y
+		row = (position % 64)*zoom;  // x
 
-	ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
+		ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
+	}
+
+
 }
+
+void drawedge(float inputvar, uint32_t position)
+{
+	if(LCDmode_flag = 0)
+	{
+		uint16_t zoom = 4;
+		uint16_t row ,column;
+		column = (position / 64)*zoom;  // y
+		row = (position % 64)*zoom;  // x
+
+		ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
+	}
+
+
+}
+
 
 float accessfloatarray(uint8_t *buf, uint8_t floatposition)
 {
@@ -482,14 +489,14 @@ int main(void)
   while (1)
   {
 
-
-
+	  starttime = HAL_GetTick();  // milliseconds precision
+	  checkpushbutton();
 // 	  Exec time measurement template:
 //	  uint32_t starttime;
 //	  uint32_t stoptime;
 //	  uint32_t difftime;
 
-//	  starttime = HAL_GetTick();  // milliseconds precision
+
 	  // do something here:
 //	  stoptime = HAL_GetTick();
 //	  difftime = stoptime - starttime;
@@ -503,79 +510,23 @@ int main(void)
 //
 //
 //	starttime = HAL_GetTick();  // milliseconds precision
-//
-//
-//
-//
+
+
 	  get_camdata();
 	  arrayreshaping(binarydata_buffer0);
+	  canny_bad_solution();
 
 
-//	  switch(binarydata_flag)
-//	{
-//		case 0:
-//			arrayreshaping(binarydata_buffer1);
-//			usb_transmit_string("\r\n reshape0 ok\r\n");
-//			break;
-//		 case 1:
-//			 arrayreshaping(binarydata_buffer0);
-//			 usb_transmit_string("\r\n reshape0 ok\r\n");
-//			break;
-//		default:
-//			usb_transmit_string("\r\n Canny detector error\r\n");
-//			break;
-//	}
-//	  canny_bad_solution();
-//	  lcdtest();
 
 
-//
-//	  stoptime = HAL_GetTick();
-//	  difftime = stoptime - starttime;
-//	  usb_transmit_string("\n\rTime: ");
-//	  usb_transmit_int(difftime);
-//	  usb_transmit_string("\n\r");
-
-
-//	  testmyarray(binarydata_flag);
-
-		//test here:
-
-		//test finish:
-
-
-// print here:
-//	  usb_transmit_string("\n\routput:\n\r");
-//	  someint = checkfloatbytes(somefloat1);
-//	  checkruntime(&get_camdata);
-//	  usb_transmit_uint(someint);
-//	  for (int i=0; i<8; i++)  // strlen() at runtime, sizeof() at compile
-//	  {
-//
-//		  someint = pun2int(&inputarr32[(i*4)]);
-//
-//		  usb_transmit_string("\n\r");
-//		  usb_transmit_string("i=");
-//		  usb_transmit_uint(i);
-//		  usb_transmit_string(" - ");
-//
-//
-//
-//
-//		  usb_transmit_uint(someint);
-//		  usb_transmit_string("\n\r");
-//		  usb_transmit_string(" - ");
-//		  outputint = byteswap2little(inputint);
-//		  usb_transmit_uint(outputint);
-//		  usb_transmit_string("\n\r");
-//	  }
-
-//	  usb_transmit_int((HAL_DMA_GetState(&hspi1)));  // is 0
-//	  usb_transmit_string("endloop");
-
-
-//	  SPI_DMATransmitCplt  // dont use
-//	  usb_transmit_string("\n\loop end.\n\r");
+  // Transmit refresh rate
+	char stringbuf[10];
+	stoptime = HAL_GetTick();
+	difftime = stoptime - starttime;
+	sprintf(stringbuf,  "%i", difftime);
+	usb_transmit_int(difftime);
+	usb_transmit_string("ms\r\n");
+	ILI9341_Draw_Text( stringbuf, 100,255, BLACK, 2, WHITE);
 
     /* USER CODE END WHILE */
 
@@ -700,6 +651,14 @@ void spi_wb_burst(uint8_t *buf, uint16_t len)
 void set_LED(bool status)
 {
 	HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, status);
+}
+
+void checkpushbutton(void)
+{
+	if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)==GPIO_PIN_RESET)
+	{
+		LCDmode_flag ^= 0x01;
+	}
 }
 
 uint32_t depth_yield(float input)
@@ -844,40 +803,12 @@ int32_t get_camdata(void)
     		if((size = getSn_RX_RSR(DATA_SOCK)) > 0){ // If data in rx buffer. maybe bug. wait for data in loop?
     			ret_rcv = recv(DATA_SOCK,binarydata_buffer0, CAM_BUF_SIZE);
 
-    			// this should be a double buffer for DMA. it is not used since dma is disabled
-//    			switch(binarydata_flag)
-//				{
-//					case 0:
-//
-//						ret_rcv = recv(DATA_SOCK,binarydata_buffer0, CAM_BUF_SIZE);
-//
-//						usb_transmit_string("binarydata_buffer0:");
-//						usb_transmit_int(ret_rcv);
-//						usb_transmit_string("\n\r");
-//						binarydata_flag = 1;
-//						break;
-//					 case 1:
-//
-//						ret_rcv = recv(DATA_SOCK,binarydata_buffer1, CAM_BUF_SIZE);
-//
-//						usb_transmit_string("binarydata_buffer1:");
-//						usb_transmit_int(ret_rcv);
-//						usb_transmit_string("\n\r");
-//						binarydata_flag = 0;
-//						break;
-//					default:
-//						usb_transmit_string("/r/n Transmission error\r\n");
-//						break;
-//				}
-
 				if(ret_rcv == CAM_BUF_SIZE)
 				{
 
-					usb_transmit_string("RX OK.\n\r");  // set busy state, wait for RX buffer
-//					if(ret==SOCK_BUSY){
-//						usb_transmit_string("SOCK_BUSY\n\r");
-//						return 0;  // still waiting
-//					}
+//					usb_transmit_string("RX OK.\n\r");  // set busy state, wait for RX buffer
+
+
 
 				} else {
 					usb_transmit_string("RX Err:\n\r");
@@ -902,7 +833,7 @@ int32_t get_camdata(void)
 			#endif
 			if((ret_sock=socket(DATA_SOCK, Sn_MR_TCP, local_port, 0x0)) != DATA_SOCK)
 			{
-				usb_transmit_string("bug?\r\n");
+				usb_transmit_string("SOCK_CLOSED_ERROR\r\n");
 				usb_transmit_int(ret_connect);
 				close(DATA_SOCK);
 				return ret_sock;
@@ -930,13 +861,6 @@ int32_t get_camdata(void)
 				#endif
 				return ret_connect;
 			}
-//			if((ret_connect = connect(DATA_SOCK, cam_destip, cam_destport)) != SOCK_OK)  // -4 ,-13 timeout zu kurz?
-//			{
-//				usb_transmit_string("Connect error return:\r\n");
-//				usb_transmit_int(ret_connect);
-//				usb_transmit_string("\r\n");
-//				return ret_connect;
-//			}
    			break;
    		default :
    			break;
@@ -945,17 +869,7 @@ int32_t get_camdata(void)
 }
 
 
-
-
-
-//raw stuff here:
-//volatile uint8_t binarydata_buffer0[CAM_BUF_SIZE];
-//volatile uint8_t binarydata_buffer1[CAM_BUF_SIZE];
-//volatile float floatframe_buffer[CAM_FLOAT_SIZE];
-//volatile float diff1_buffer[CAM_FLOAT_SIZE];  // 3200
-//volatile float diff2_buffer[CAM_FLOAT_SIZE];  // 3200
-
-// original returning edge array. mod version shall return edge yes/no?
+// original returning edge array. mod version shall return edge
 float canny_edge_mod(const float *floatbuf)
 {
 
@@ -976,7 +890,7 @@ float canny_edge_mod(const float *floatbuf)
     // some useful error checking
 
 
-    // memory allocation
+    // memory allocation does not work as expected
 	float *in = calloc(nx * ny * sizeof(float), sizeof(float));
     float *G = calloc(nx * ny * sizeof(float), sizeof(float));
     float *after_Gx = calloc(nx * ny * sizeof(float), sizeof(float));
@@ -1207,32 +1121,7 @@ void convolution(const float *in, float *out, const float *kernel,
 //	uint8_t MAX_BRIGHTNESS = 255;  // not used
     const int khalf = kn / 2;  // half of kernel
     float min = FLT_MAX, max = -FLT_MAX;  // min and max float values
-    /*
-    if (normalize)  // if float value is overfloating
-    {
 
-
-        for (int m = khalf; m < nx - khalf; m++)
-        {
-            for (int n = khalf; n < ny - khalf; n++) {
-                float pixel = 0.0;
-                size_t c = 0;
-                for (int j = -khalf; j <= khalf; j++)
-                {
-
-                    for (int i = -khalf; i <= khalf; i++) {
-                        pixel += in[(n - j) * nx + m - i] * kernel[c];
-                        c++;
-                    }
-                if (pixel < min)
-                    min = pixel;
-                if (pixel > max)
-                    max = pixel;
-                }
-            }
-		}
-	}
-	*/
     for (int m = khalf; m < nx - khalf; m++)
     {
         for (int n = khalf; n < ny - khalf; n++)
@@ -1270,9 +1159,6 @@ void gaussian_filter(const float *in, float *out,
     const int n = 2 * (int)(2 * sigma) + 3;
     const float mean = floorf(n / 2.0f);
     float kernel[n * n]; // variable length array
-
-//    fprintf(stderr, "gaussian_filter: kernel size %d, sigma=%g\n",
-//            n, sigma);
     size_t c = 0;
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++) {
@@ -1291,29 +1177,19 @@ void gaussian_filter(const float *in, float *out,
 
 float canny_bad_solution(void)
 {
-
 	// detection hysteresis min, max
 	const float tmin = 0.5;
 	const float tmax = 1.0;
-	//gauss filter sigma parameter
-//	const float sigma = 1;  // not used. only needed for gauss filter
 
 	// matrix shape
-
     const int nx = 64;
     const int ny = 50;
-
-//    int MAX_BRIGHTNESS = 255;  // was
-//    uint MAX_BRIGHTNESS = 255;  // max float brightness
-
-    // some useful error checking
-//    float after_Gy;
 
     // memory allocation in heap
 //	float *in = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *G = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *after_Gx = calloc(nx * ny * sizeof(float), sizeof(float));
-//      float *after_Gy = calloc(3200, sizeof(float));
+//   float *after_Gy = calloc(3200, sizeof(float));
 //    float *nms = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *out = malloc(nx * ny * sizeof(float));
 
@@ -1448,7 +1324,7 @@ float canny_bad_solution(void)
 
     			usb_transmit_string("\n\r");
     		}
-    		HAL_Delay(300);
+//    		HAL_Delay(300);
 //    		testfloatarray();
 //    		for(int i = 50; i <60; i++)  // ok
 //    		{
@@ -1480,7 +1356,8 @@ float canny_bad_solution(void)
 //    			usb_transmit_string("\n\r");
 //    		}
 //        		set_LED(false);
-        // free reserved memory
+
+//		  free reserved memory
 //        free(after_Gx);
 //        free(after_Gy);
 //        free(G);
@@ -1491,145 +1368,6 @@ float canny_bad_solution(void)
 }
 
 
-
-/*
- * Links:
- * http://en.wikipedia.org/wiki/Canny_edge_detector
- * http://www.tomgibara.com/computer-vision/CannyEdgeDetector.java
- * http://fourier.eng.hmc.edu/e161/lectures/canny/node1.html
- * http://www.songho.ca/dsp/cannyedge/cannyedge.html
- * https://medium.com/@nikatsanka/comparing-edge-detection-methods-638a2919476e
- * Note: T1 and T2 are lower and upper thresholds.
- */
-
-/* original canny detection
-pixel_t *canny_edge_detection_original(const pixel_t *in,
-                              const bitmap_info_header_t *bmp_ih,
-                              const int tmin, const int tmax,
-                              const float sigma)
-{
-    const int nx = 64;
-    const int ny = 50;
-
-    pixel_t *G = calloc(nx * ny * sizeof(pixel_t), 1);
-    pixel_t *after_Gx = calloc(nx * ny * sizeof(pixel_t), 1);
-    pixel_t *after_Gy = calloc(nx * ny * sizeof(pixel_t), 1);
-    pixel_t *nms = calloc(nx * ny * sizeof(pixel_t), 1);
-    pixel_t *out = malloc(bmp_ih->bmp_bytesz * sizeof(pixel_t));
-
-    if (G == NULL || after_Gx == NULL || after_Gy == NULL ||
-        nms == NULL || out == NULL) {
-        fprintf(stderr, "canny_edge_detection:"
-                " Failed memory allocation(s).\n");
-        exit(1);  // check if error occured
-    }
-
-    gaussian_filter(in, out, nx, ny, sigma);
-
-    const float Gx[] = {-1, 0, 1,
-                        -2, 0, 2,
-                        -1, 0, 1};
-
-    convolution(out, after_Gx, Gx, nx, ny, 3, false);
-
-    const float Gy[] = { 1, 2, 1,
-                         0, 0, 0,
-                        -1,-2,-1};
-
-    convolution(out, after_Gy, Gy, nx, ny, 3, false);
-
-    for (int i = 1; i < nx - 1; i++)
-        for (int j = 1; j < ny - 1; j++) {
-            const int c = i + nx * j;
-            // G[c] = abs(after_Gx[c]) + abs(after_Gy[c]);
-            G[c] = (pixel_t)hypot(after_Gx[c], after_Gy[c]);
-        }
-
-    // Non-maximum suppression, straightforward implementation.
-    for (int i = 1; i < nx - 1; i++)
-        for (int j = 1; j < ny - 1; j++) {
-            const int c = i + nx * j;
-            const int nn = c - nx;
-            const int ss = c + nx;
-            const int ww = c + 1;
-            const int ee = c - 1;
-            const int nw = nn + 1;
-            const int ne = nn - 1;
-            const int sw = ss + 1;
-            const int se = ss - 1;
-
-            // calculate intensity gradient vector
-            const float dir = (float)(fmod(atan2(after_Gy[c],
-                                                 after_Gx[c]) + M_PI,
-                                           M_PI) / M_PI) * 8;
-            if (((dir <= 1 || dir > 7) && G[c] > G[ee] &&
-                 G[c] > G[ww]) || // 0 deg
-                ((dir > 1 && dir <= 3) && G[c] > G[nw] &&
-                 G[c] > G[se]) || // 45 deg
-                ((dir > 3 && dir <= 5) && G[c] > G[nn] &&
-                 G[c] > G[ss]) || // 90 deg
-                ((dir > 5 && dir <= 7) && G[c] > G[ne] &&
-                 G[c] > G[sw]))   // 135 deg
-                nms[c] = G[c];
-            else
-                nms[c] = 0;
-        }
-
-    // Reuse array
-    // used as a stack. nx*ny/2 elements should be enough.
-    int *edges = (int*) after_Gy;
-    memset(out, 0, sizeof(pixel_t) * nx * ny);
-    memset(edges, 0, sizeof(pixel_t) * nx * ny);
-
-    // Tracing edges with hysteresis . Non-recursive implementation.
-    size_t c = 1;
-    for (int j = 1; j < ny - 1; j++)
-        for (int i = 1; i < nx - 1; i++) {
-            if (nms[c] >= tmax && out[c] == 0) { // trace edges
-                out[c] = MAX_BRIGHTNESS;
-
-
-                int nedges = 1;
-                edges[0] = c;  //c=1
-
-                do {
-                    nedges--;  // nedges = 0
-                    const int t = edges[nedges];  // t =
-
-                    int nbs[8]; // neighbours
-                    nbs[0] = t - nx;     // nn
-                    nbs[1] = t + nx;     // ss
-                    nbs[2] = t + 1;      // ww
-                    nbs[3] = t - 1;      // ee
-                    nbs[4] = nbs[0] + 1; // nw
-                    nbs[5] = nbs[0] - 1; // ne
-                    nbs[6] = nbs[1] + 1; // sw
-                    nbs[7] = nbs[1] - 1; // se
-
-                    for (int k = 0; k < 8; k++)
-                        if (nms[nbs[k]] >= tmin && out[nbs[k]] == 0) {
-                            out[nbs[k]] = MAX_BRIGHTNESS;
-                            edges[nedges] = nbs[k];
-                            nedges++;
-                        }
-                } while (nedges > 0);
-            }
-            c++;
-        }
-
-    free(after_Gx);
-    free(after_Gy);
-    free(G);
-    free(nms);
-
-    return out;
-}
-*/
-
-//	free(after_Gx);
-//    free(after_Gy);
-//    free(G);
-//    free(nms);
 
 /* USER CODE END 4 */
 
