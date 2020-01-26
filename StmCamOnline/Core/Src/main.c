@@ -52,6 +52,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+enum pixelcolor_t {
+    unreliable = 64,
+    edge = 128,
+	no_edge = 0
+} pixelcolor;
 
 /* USER CODE END PTD */
 
@@ -59,10 +64,8 @@
 /* USER CODE BEGIN PD */
 #define DEBUG_MODE
 
-#define DATA_SOCK	0
-//#define CONTROL_SOCK	1  // not used
-#define CAM_BUF_SIZE 13176
-#define CAM_FLOAT_SIZE 3200  // 3200 floats, header 94 floats
+//#define DATA_SOCK	0
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -87,6 +90,9 @@
 	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
 	} while(0)
 #endif
+#define CAM_BINARY_BUFSIZE 13176
+#define CAM_FLOAT_BUFFSIZE 3294
+
 
 /* USER CODE END PM */
 
@@ -94,40 +100,41 @@
 
 /* USER CODE BEGIN PV */
 
+//  values for data exchange on UART1
+volatile uint8_t uart_request_flag = 0;
+volatile uint8_t uart_request_command = 0;
+
+// if edge is detected egde flag is set to 1, otherwise set to 0
+uint8_t edge_detected_flag = 0;
+// if edge is detected this variable becomes the number of detection pixel
+uint32_t edge_position_variable = 0;
+
+const char cam_request_cartesian = 'Z';	// request cartesian data from camera
+const char cam_request_radial = 'D';	// request radial data from camera
+const char cam_request_close = 'q';  // close connection to camera(not used)
 
 
-uint8_t usart__request_command = 0;
-uint8_t usart__respond_command = 0;
-
-char cam_request_cartesian = 'Z';
-char cam_request_radial = 'D';
-char cam_request_close = 'q';
-
-
-volatile uint8_t binarydata_flag = 0;
-
+// LCD draw mode.
+// 0 = raw image. 1 = filtered image
 uint8_t LCDmode_flag = 0;
-uint8_t binarydata_buffer0[CAM_BUF_SIZE];
-
-volatile float floatframe_buffer[CAM_FLOAT_SIZE];
 
 
+static uint8_t msg[20]={0,};  // ethernet config debug printing
 
 
-static uint8_t msg[20]={0,};  // ethernet config printing
+const uint8_t cam_destip[4] = {192, 168, 178, 69};	// static ip for ethernet shield
+const uint16_t cam_destport = 50002;	//	camera ip port
+uint16_t local_port = 49152;	// this must not be constant and is changed in runtime
 
+// hystetesis values for edge detection
+// values less tmin is falling edges (white)
+// values between tmin and tmax is noise (black)
+// values larger tmax are rising edges (white)
+const float tmin = -0.15;
+const float tmax = 0.15;
 
-uint8_t cam_destip[4] = {192, 168, 178, 69};	//
-
-
-
-
-uint16_t cam_destport = 50002;	//
-uint16_t local_port = 49152;;	//
-
-
-
-// global flags
+volatile uint8_t binarydata_buffer0[CAM_BINARY_BUFSIZE];  // 13176 bytes raw image data
+volatile float floatframe_buffer[CAM_FLOAT_BUFFSIZE];  // 3200 floats, header 94 floats
 
 /* USER CODE END PV */
 
@@ -141,7 +148,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 
 
-
+// function prototype definitions
 void usb_transmit_byte(uint8_t transmit_int);
 void usb_transmit_int(int32_t transmit_int);
 void usb_transmit_uint(uint32_t transmit_uint);
@@ -149,158 +156,38 @@ void usb_transmit_float(float transmit_float);
 void usb_transmit_char(char transmit_char);  // test this
 void usb_transmit_string(char *transmit_string);  // test this
 void set_LED(bool status);
-
 void cs_sel();
-
 void cs_desel();
-
 uint8_t spi_rb(void);
-
 void spi_wb(uint8_t buf);
-
 void spi_rb_burst(uint8_t *buf, uint16_t len);
-
 void spi_wb_burst(uint8_t *buf, uint16_t len);
-
-
 void checkpushbutton(void);
-
-/**
-  * @brief  Read Data from camera vie W5500 on SPI.
-  * @retval float
-  */
-int32_t get_camdata(void);
+int32_t get_cam_data(uint8_t *inputvar);
+int32_t close_cam_connection(void);
 float canny_edge_mod(const float *floatbuf);
-float canny_bad_solution(void);
-// experimental stuff here:
+float canny_filter_mod(void);
+uint32_t yield_depth_color(float input);
+uint32_t yield_edge_color(int8_t edge_value);
+bool is_negative(float x);
+inline uint32_t SwapByteOrder_32(uint32_t a);
+inline uint32_t byteswap2little(uint8_t *value);
+inline uint32_t checkfloatbytes(float C);
+float pun2float(const uint8_t *buf);
+float swap2float(uint8_t *buf);
+uint32_t pun2int(const uint8_t *buf);
 
-uint32_t depth_yield(float input);
-uint32_t edge_yield(float input);
+void drawsquare(float inputvar, uint32_t position);
 
+void drawedge(uint32_t position, uint32_t color);
+void detect_edge_hysteresis( float raw_input, float filter_input, int32_t position);
+float accessfloatarray(uint8_t *buf, uint8_t floatposition);
+void arrayreshaping(uint8_t *arrptr);
+void uart_response(int32_t edgeposition);
 /**
-  * @brief  Low level check if float is negative value.
-  * @retval 1 if x is negative, otherwise 0
+  * @brief  This function is used to print parts of the float array for testing and debugging
+  * @retval none
   */
-bool is_negative(float x) {  // fast check for negative float // only big endian?
-//	usb_transmit_byte(signbit(x));
-    return signbit(x);
-}
-
-
-
-// reordering from big endian to little endian
-/**
-  * @brief  Swapping uint32_t from big endian to little endian.
-  * @retval uint32_t
-  */
-inline uint32_t SwapByteOrder_32(uint32_t a)  // ok
-{
-  return __builtin_bswap32(a);
-}
-
-/**
-  * @brief  Swapping 4 bytes of uint8_t array from big endian to little endian.
-  * @retval uint32_t
-  */
-//inline uint32_t byteswap2little(uint8_t *value)  // test it
-inline uint32_t byteswap2little(uint8_t *value)  // test it
-{
-	uint32_t tmpint;
-	memcpy(&tmpint, value, 4);
-	return __builtin_bswap32(tmpint);
-}
-
-/**
-  * @brief  Showing uint32_t bit representation of float value
-  * @retval uint32_t
-  */
-inline uint32_t checkfloatbytes(float C) {
-  union {
-    uint32_t i;
-    float f;
-  } in;
-  in.f = C;
-//  out.i = SwapByteOrder_32(in.i);
-  return in.i;
-}
-
-/**
-  * @brief  Type punning access of 4 bytes as a 32 bit little endian float.
-  * @retval float
-  */
-float pun2float(const uint8_t *buf) {
-    // from https://blog.regehr.org/archives/959
-  float num;
-  memcpy(&num, buf, 4);
-//    return __builtin_bswap32(num);
-  return num;
-}
-/**
-  * @brief  Swapping 4 bytes of uint8_t array and type punning access of 4 bytes as a 32 bit little endian float.
-  * @retval float
-  */
-float swap2float(uint8_t *buf) {
-// from https://blog.regehr.org/archives/959
-	uint32_t tmpswap = byteswap2little(buf);
-	float num;
-	memcpy(&num, &tmpswap, 4);
-	return num;
-}
-
-
-/**
-  * @brief  Type punning access of 4 bytes as a 32 bit little endian uint32_t.
-  * @retval uint32_t
-  */
-uint32_t pun2int(const uint8_t *buf) {
-    // from https://blog.regehr.org/archives/959
-
-  uint32_t num;
-  memcpy(&num, buf, 4);
-//  return __builtin_bswap32(num);  // swap endianness
-  return num;
-}
-/**
-  * @brief  Type punning access of 4 bytes as a 32 bit swapped bytes float.
-  * @retval uint32_t
-  */
-
-
-
-
-
-
-void drawsquare(float inputvar, uint32_t position)
-{
-	if(LCDmode_flag == 0)
-	{
-		uint16_t zoom = 4;
-		uint16_t row ,column;
-		column = (position / 64)*zoom;  // y
-		row = (position % 64)*zoom;  // x
-
-		ILI9341_Draw_Rectangle(column,row , zoom, zoom, depth_yield(inputvar));
-	}
-}
-
-void drawedge(float inputvar, uint32_t position)
-{
-	if(LCDmode_flag == 1)
-	{
-		uint16_t zoom = 4;
-		uint16_t row ,column;
-		column = (position / 63)*zoom;  // y
-		row = (position % 63)*zoom;  // x
-		ILI9341_Draw_Rectangle(column,row , zoom, zoom, edge_yield(inputvar));
-	}
-}
-
-
-float accessfloatarray(uint8_t *buf, uint8_t floatposition)
-{
-	return swap2float((buf+4*floatposition));
-}
-
 void testfloatarray(void)
 {
 	float outfloat;
@@ -348,24 +235,30 @@ void testfloatarray(void)
 }
 
 
-void arrayreshaping(const uint8_t *arrptr)
-{
-	for(size_t i = 0; i < 3200; i++)
-	{
-		floatframe_buffer[i] = swap2float(arrptr+376+4*i);  // ok
-		drawsquare(floatframe_buffer[i],i);
-	}
-}
-
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+//{
+//  if (huart->Instance == USART1)
+//  {
+//
+//	  usb_transmit_string("\r\nuart\r\n");
+////	HAL_UART_Transmit(&huart2, &point1, 1, 100);  // debug point 1 reached
+////    /* Transmit one byte with 100 ms timeout */
+////    HAL_UART_Transmit(&huart2, &byte, 1, 100);
+//
+//    /* Receive one byte in interrupt mode */
+//    HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // have to enable interrupt again
+//  }
+//}
 
 // Ethernet init procedure
-
 void IO_LIBRARY_Init(void) {
-	uint8_t RXbufSize[] =	{ 16, 0, 0, 0, 0, 0, 0, 0, }; // socket buffer size is 0...16
-	uint8_t TXbufSize[] =	{ 16, 0, 0, 0, 0, 0, 0, 0, }; // socket buffer size
+	uint8_t RXbufSize[] =	{ 16, 0, 0, 0, 0, 0, 0, 0, }; // rx buffer size is 0...16, only one socket is usable!
+	uint8_t TXbufSize[] =	{ 16, 0, 0, 0, 0, 0, 0, 0, }; // tx buffer size
 
 	reg_wizchip_cs_cbfunc(cs_sel, cs_desel);
 	reg_wizchip_spi_cbfunc(spi_rb, spi_wb);
+
+//	bug. spi burst mode does not work. reason unknown.
 //	reg_wizchip_spiburst_cbfunc(spi_rb_burst, spi_wb_burst);
 
 
@@ -379,7 +272,7 @@ void IO_LIBRARY_Init(void) {
 
 	wizchip_getnetinfo(&netInfo);
 	PRINT_NETINFO(netInfo);
-
+	// network timeout configuration
 	wiz_NetTimeout gWIZNETTIME = {.retry_cnt = 3,         //RCR = 3
 	                               .time_100us = 2000};     //RTR = 2000
 	wizchip_setinterruptmask(IK_SOCK_0);  // Enable interrupt on socket0
@@ -430,10 +323,9 @@ int main(void)
 
 
 
-  IO_LIBRARY_Init();
-  HAL_UART_Receive_IT(&huart1, &usart__request_command, 1);
-  ILI9341_Init();
-
+  IO_LIBRARY_Init();  // Ethernet lib
+  ILI9341_Init();	// LCD Lib
+  HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // Interrupt on UART1 enabled
 
   /* USER CODE END 2 */
  
@@ -441,46 +333,33 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
-
-
-	  uint32_t starttime;
-	  uint32_t stoptime;
-	  uint32_t difftime;
-
+//  close_cam_connection();  // this function makes no difference in performance
+  uint32_t starttime;
+  uint32_t stoptime;
+  uint32_t difftime;
+  HAL_Delay(1000);
   set_LED(true);  // enable led
+
   while (1)
   {
 
-	  starttime = HAL_GetTick();  // milliseconds precision
-	  checkpushbutton();
 // 	  Exec time measurement template:
 //	  uint32_t starttime;
 //	  uint32_t stoptime;
 //	  uint32_t difftime;
-
-
-	  // do something here:
+//	  starttime = HAL_GetTick();  // milliseconds precision
+/////////// do something here:
 //	  stoptime = HAL_GetTick();
 //	  difftime = stoptime - starttime;
 //	  usb_transmit_string("Time: ");
 //	  usb_transmit_int(difftime);
 //	  usb_transmit_string("\n\r");
-//	volatile uint8_t binarydata_buffer0[CAM_BUF_SIZE];
-//	volatile uint8_t binarydata_buffer1[CAM_BUF_SIZE];
-//	volatile float floatframe_buffer[CAM_FLOAT_SIZE];
-//      HAL_Delay(300);
-//
-//
-//	starttime = HAL_GetTick();  // milliseconds precision
 
-
-	  get_camdata();
-	  arrayreshaping(binarydata_buffer0);
-	  canny_bad_solution();
-
-
-
+	starttime = HAL_GetTick();  // milliseconds precision
+	checkpushbutton();  // check if blue button was pressed
+	get_cam_data(cam_request_cartesian);	// get camera data
+	arrayreshaping(binarydata_buffer0);  // reshape and print raw camera data
+	canny_filter_mod();	 // filter and print filtered camera data
 
   // Transmit refresh rate
 	char stringbuf[10];
@@ -489,7 +368,7 @@ int main(void)
 	sprintf(stringbuf,  "%i", difftime);
 	usb_transmit_int(difftime);
 	usb_transmit_string("ms\r\n");
-	ILI9341_Draw_Text( stringbuf, 100,255, BLACK, 2, WHITE);
+	ILI9341_Draw_Text( stringbuf, 100,300, BLACK, 2, WHITE);
 
     /* USER CODE END WHILE */
 
@@ -542,6 +421,7 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+// debug functions for usb printing stuff.
 void usb_transmit_byte(uint8_t transmit_byte)  // ok but sprintf is dangerous
 {
 	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_byte, 1, 100);  // alternativ strlen
@@ -565,7 +445,7 @@ void usb_transmit_char(char transmit_char)  // ok
 }
 void usb_transmit_string( char *transmit_string)  //  ok
 {
-	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_string, strlen(transmit_string) , 100); // small bug.
+	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_string, strlen(transmit_string) , 100);
 }
 void usb_transmit_float(float transmit_float)
 {
@@ -579,6 +459,7 @@ void usb_transmit_float(float transmit_float)
 	HAL_UART_Transmit(&huart2, (uint8_t*) fullstring, strlen(fullstring), 100);
 }
 
+// w5500 control functions
 void cs_sel()
 {
 	HAL_GPIO_WritePin(ETHERNET_CS_GPIO_Port, ETHERNET_CS_Pin, GPIO_PIN_RESET); //CS LOW
@@ -616,6 +497,9 @@ void set_LED(bool status)
 	HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, status);
 }
 
+/**
+  * @brief This function detects a blue button press and swaps(XOR) LCD drawing mode flag
+  */
 void checkpushbutton(void)
 {
 	if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)==GPIO_PIN_RESET)
@@ -624,8 +508,124 @@ void checkpushbutton(void)
 	}
 }
 
-uint32_t depth_yield(float input)
+
+/**
+  * @brief  Low level check if float is negative value.
+  * @retval 1 if x is negative, otherwise 0
+  */
+bool is_negative(float x) {  // fast check for negative float // only big endian?
+//	usb_transmit_byte(signbit(x));
+    return signbit(x);
+}
+
+
+/**
+  * @brief  Swapping uint32_t from big endian to little endian, compiler optimized version
+  * @retval uint32_t
+  */
+inline uint32_t SwapByteOrder_32(uint32_t a)  // ok
 {
+  return __builtin_bswap32(a);
+}
+
+/**
+  * @brief  Swapping 4 bytes of uint8_t array from big endian to little endian.
+  * @retval uint32_t
+  */
+inline uint32_t byteswap2little(uint8_t *value)
+{
+	uint32_t tmpint;
+	memcpy(&tmpint, value, 4);
+	return __builtin_bswap32(tmpint);
+}
+
+/**
+  * @brief  Showing uint32_t bit representation of float value
+  * @retval uint32_t type punned value. not byteswapped version
+  */
+inline uint32_t checkfloatbytes(float C)
+{
+  union {
+    uint32_t i;
+    float f;
+  } in;
+  in.f = C;
+//  out.i = SwapByteOrder_32(in.i);
+  return in.i;
+}
+
+/**
+  * @brief  Type punning access of 4 bytes as a 32 bit little endian float.
+  * @retval float form 4 bytes. not byte-swapping version
+  */
+float pun2float(const uint8_t *buf)
+{
+    // from https://blog.regehr.org/archives/959
+  float num;
+  memcpy(&num, buf, 4);
+//    return __builtin_bswap32(num);
+  return num;
+}
+/**
+  * @brief  Swapping 4 bytes of uint8_t array and type punning access of 4 bytes as a 32 bit little endian float.
+  * @retval float from swapped 4 bytes
+  */
+float swap2float(uint8_t *buf)
+{
+// from https://blog.regehr.org/archives/959
+	uint32_t tmpswap = byteswap2little(buf);
+	float num;
+	memcpy(&num, &tmpswap, 4);
+	return num;
+}
+
+
+/**
+  * @brief  Type punning access of 4 bytes as a 32 bit little endian uint32_t.
+  * @retval uint32_t type from 8 bytes.
+  */
+uint32_t pun2int(const uint8_t *buf)
+{
+    // from https://blog.regehr.org/archives/959
+
+  uint32_t num;
+  memcpy(&num, buf, 4);
+//  return __builtin_bswap32(num);  // swap endianness
+  return num;
+}
+
+
+/**
+  * @brief  Type punning access of 4 bytes as a 32 bit swapped bytes float.
+  * @retval none
+  */
+void drawsquare(float inputvar, uint32_t position)
+{
+	uint16_t zoom = 4;
+	uint16_t row ,column;
+	column = (position / 64)*zoom;  // y
+	row = (position % 64)*zoom;  // x
+	ILI9341_Draw_Rectangle(column,row , zoom, zoom, yield_depth_color(inputvar));
+}
+
+
+/**
+  * @brief  Type punning access of 4 bytes as a 32 bit swapped bytes float.
+  * @retval uint32_t
+  */
+float accessfloatarray(uint8_t *buf, uint8_t floatposition)
+{
+	return swap2float((buf+4*floatposition));
+}
+
+/**
+  * @brief this function yields a RGB color code from input value. it is used to draw a deep map from raw image data
+  * @param random float value
+  * @retval RGB565 color code, if input is positive. BLAC color if input negative
+  */
+uint32_t yield_depth_color(float input)
+{
+	// 565-RGB linear colorbar
 	uint32_t colorarray[22] = {
 			0xF800,	 // red
 			0xFB20,
@@ -647,30 +647,31 @@ uint32_t depth_yield(float input)
 			0x017F,
 			0x181F,
 			0x401F,
-			0x701F,  // magenta
+			0x701F,  // purple
 			0x981F};
 
 	// depth thredshold. Non-adaptive implementation
-	const float t1 = 0.05;
-	const float t2 = 0.1;
-	const float t3 = 0.15;
-	const float t4 = 0.2;
-	const float t5 = 0.25;
-	const float t6 = 0.3;
-	const float t7 = 0.35;
-	const float t8 = 0.4;
-	const float t9 = 0.45;
-	const float t10 = 0.5;
-	const float t11 = 0.55;
-	const float t12 = 0.6;
-	const float t13 = 0.65;
-	const float t14 = 0.7;
-	const float t15 = 0.75;
-	const float t16 = 0.8;
-	const float t17 = 0.85;
-	const float t18 = 0.9;
-	const float t19 = 0.95;
-	const float t20 = 1.0;
+	const float addsome = 0.05;  // ajust this if image is blurry
+	const float t1 = 0.05 + addsome;
+	const float t2 = 0.1 + addsome;
+	const float t3 = 0.15 + addsome;
+	const float t4 = 0.2 + addsome;
+	const float t5 = 0.25 + addsome;
+	const float t6 = 0.3 + addsome;
+	const float t7 = 0.35 + addsome;
+	const float t8 = 0.4 + addsome;
+	const float t9 = 0.45 + addsome;
+	const float t10 = 0.5 + addsome;
+	const float t11 = 0.55 + addsome;
+	const float t12 = 0.6 + addsome;
+	const float t13 = 0.65 + addsome;
+	const float t14 = 0.7 + addsome;
+	const float t15 = 0.75 + addsome;
+	const float t16 = 0.8 + addsome;
+	const float t17 = 0.85 + addsome;
+	const float t18 = 0.9 + addsome;
+	const float t19 = 0.95 + addsome;
+	const float t20 = 1.0 + addsome;
 
 	if(is_negative(input)==1) {
 		return BLACK;
@@ -717,89 +718,187 @@ uint32_t depth_yield(float input)
 	}else if (input>t20) {
 		return colorarray[20];;
 	}
+	return 0;  // foo should not reach this point
 }
 
-uint32_t edge_yield(float input)
+/**
+  * @brief  drawing a pixel depending on absolute input array position and a color value
+  * 		color value is taken from yield_edge_color()
+  * @param position - absolute array position
+  * @param color  - value from from yield_edge_color()
+  * @retval none
+  */
+void drawedge(uint32_t position, uint32_t color)
 {
-	// edge thredshold hysteresis
-	const float t0 = -0.01;
-	const float t1 = 0.15;
 
-	if(input<t0) {
-		return RED;
-	} else if (input<t1 && input>t0) {
-		return BLACK;
-	} else {
-		return WHITE;
+		uint16_t zoom = 4;
+		uint16_t row ,column;
+		column = ((position) / 64)*zoom;  // y
+		row = ((position) % 64)*zoom;  // x
+		ILI9341_Draw_Rectangle(column, row, zoom, zoom, color);
+}
+
+// changed
+/**
+  * @brief this function yields WHITE if input value is detected edge,
+  * 		BLACK if input value is no edge detected
+  * 		and RED if unreliable data is detected which happens when
+  * 		camera returns -1 or -2 while detecting false illumination
+  * @param random float value
+  * @retval RGB565 color code
+  */
+uint32_t yield_edge_color(int8_t edge_value)
+{
+	switch(edge_value)
+	{
+		case unreliable: return RED; break;
+		case edge: return WHITE; break;
+		case no_edge: return BLACK; break;
+		default: return RED; break;  // if something goes wrong
 	}
 }
 
-int32_t get_camdata(void)
+/**
+  * @brief this function yields WHITE if input value is over hysteresis value,
+  * 		BLACK if input value is between hysteresis value which is noise filtering
+  * 		and RED if input value is a big negative number, which is unreliable image data
+  * 		(camera returns -1 or -2 while detecting false illumination )
+  * @param raw data float value at raw array position
+  * @param calculated fliter value from colvolution at raw data array position
+  * @param center position from raw data input array
+  * @retval none
+  */
+void detect_edge_hysteresis( float raw_input, float filter_input, int32_t position)
 {
+	//	edge thredshold hysteresis
+	if(is_negative(raw_input)==true)
+	{
+		edge_position_variable = -position;  // unreliable data detected at this position
+		if(LCDmode_flag == 1)
+		{
+			drawedge(position, yield_edge_color(unreliable));
+		}
 
-	int32_t ret_send = 0;
+	}else if(filter_input<tmin || filter_input>tmax)
+	{
+		edge_position_variable = position;  // edge detected on this position
+		if(LCDmode_flag == 1)
+		{
+			drawedge(position, yield_edge_color(edge));
+		}
+
+
+	} else {
+		edge_position_variable = 0x7FFF;  //  is 32767 in int and uint to avoid confusion
+
+		if(LCDmode_flag == 1)
+		{
+			drawedge(position, yield_edge_color(no_edge));
+		}
+	}
+}
+
+/**
+  * @brief  This function reshapes the raw camera data to a float array
+  * 		reshaped data is written to floatframe_buffer global array
+  *
+  * 		possibly containing a bug shifting output array because
+  * 		output image is shifted
+  *
+  * @param	pointer to raw data array
+  * @retval none
+  */
+void arrayreshaping(uint8_t *arrptr)
+{
+	uint8_t *tmpptr;
+	for(size_t i = 0; i < 3200; i++)  // maybe 3200 - i
+	{
+		// input pointer is shifted by 376 bit to cut off the data header
+		tmpptr = arrptr + 376 + 4*i;
+		floatframe_buffer[i] = swap2float(tmpptr );  // possible bug: data shift in input array
+		if(LCDmode_flag == 0)
+		{
+			drawsquare(floatframe_buffer[i],i);
+		}
+	}
+}
+
+void set_edge_flag(int32_t edgeposition)
+{
+	if (edgeposition == 0x7FF)
+	{
+		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 0);
+		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
+	} else {
+		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 1);
+		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 1);
+	}
+}
+
+void uart_response(int32_t edgeposition)
+{
+	if(uart_request_flag == true)	// if request flag is set
+	{
+		HAL_UART_Transmit(&huart1, edgeposition, 4, 100);
+	}
+	uart_request_flag = false;  // clear request flag
+}
+
+/**
+  * @brief this function requests data by using the w5500 chip socket feature.
+  * 		after 5ms delay receiving buffer is read to 'binarydata_buffer0' global array
+  * 		the socket is kept alive all the time so reconnect is not needed.
+  * 		yet there is still a bug on system startup which happens randomly.
+  * 		this implementation is not very adaptive and cannot close a running
+  * 		connection on error.
+  *
+  * @param none
+  * @retval 0 when function finishes successfully
+  */
+int32_t get_cam_data(uint8_t *inputvar)
+{
 	int32_t ret_sock = 0;
 	int32_t ret_connect = 0;
-
 	int32_t ret_rcv = 0;
 	uint16_t size = 0;
 	uint16_t sn = 0; // using only socket 0
-	char testch = 'D';
-	//   uint8_t testch = 0x44;
-//   uint8_t testch = 9;
 
 	while(!getPHYCFGR());  // phy link check
-
-   switch(getSn_SR(DATA_SOCK))
-   {
+    switch(getSn_SR(sn))
+    {
     	case SOCK_ESTABLISHED :
-//    		usb_transmit_string("SocketEstablished.\r\n");
-
-
      // send data here:
-    		ret_send = send(sn, &testch, 1);
+    		send(sn, &inputvar, 1);
     		// wait here between response
-    	    HAL_Delay(5);  // delay for network reply needed
+    	    HAL_Delay(4);  // delay for network reply needed
+    	     // check if something is in rx buffer:  // propabely bug when receiving data
+    		if((size = getSn_RX_RSR(sn)) > 0)
+    		{ // If data in rx buffer
+    			ret_rcv = recv(sn, binarydata_buffer0, CAM_BINARY_BUFSIZE);
 
-
-
-
-//    		do{
-//    			usb_transmit_string("\n\r Waiting for data - ");
-//    			size = getSn_RX_RSR(DATA_SOCK);
-//    			usb_transmit_int(size);
-//    			usb_transmit_string("\n\r");
-//    		} while (size == 0);
-//    		usb_transmit_string("\n\r received - ");
-//    		usb_transmit_int(size);
-//    		usb_transmit_string("\n\r");
-    	     // receive data here:
-
-// bug. wait for something in register.  // received size is not granted
-
-    		if((size = getSn_RX_RSR(DATA_SOCK)) > 0){ // If data in rx buffer. maybe bug. wait for data in loop?
-    			ret_rcv = recv(DATA_SOCK,binarydata_buffer0, CAM_BUF_SIZE);
-
-				if(ret_rcv == CAM_BUF_SIZE)
+				if(ret_rcv == CAM_BINARY_BUFSIZE)  // if 13176 bytes received
 				{
-
-//					usb_transmit_string("RX OK.\n\r");  // set busy state, wait for RX buffer
-
-
-
+//					#ifdef DEBUG:
+//					usb_transmit_string("RX OK.\n\r");
+//					#endif cam_request_close
+//					send(sn, &cam_request_close, 1);
 				} else {
-					usb_transmit_string("RX Err:\n\r");
+					usb_transmit_string("\n\rRX Err:");
 					usb_transmit_int(ret_rcv);  //
 					usb_transmit_string("\n\r");
 					// hier timeout einbauen, da infinite loop in SOCK_ESTABLISHED
+//					send(sn, &cam_request_close, 1);
+//					HAL_Delay(5);  // delay for network reply needed
 				}
     		} else {
     			usb_transmit_string("/r/n Transmission error \r\n");
 				usb_transmit_int(size);
+//				send(sn, &cam_request_close, 1);
+//				HAL_Delay(5);  // delay for network reply needed
     		}
     		break;
    		case SOCK_CLOSE_WAIT :
-			if((ret_connect=disconnect(DATA_SOCK)) != SOCK_OK) return ret_connect;
+			if((ret_connect=disconnect(sn)) != SOCK_OK) return ret_connect;
 			#ifdef DEBUG_MODE:
 			usb_transmit_string("CloseOK\r\n");
 			#endif
@@ -808,14 +907,14 @@ int32_t get_camdata(void)
 			#ifdef DEBUG_MODE:
    			usb_transmit_string("SOCK_CLOSED\r\n");
 			#endif
-			if((ret_sock=socket(DATA_SOCK, Sn_MR_TCP, local_port, 0x0)) != DATA_SOCK)
+			if((ret_sock=socket(sn, Sn_MR_TCP, local_port, 0x0)) != sn)
 			{
 				usb_transmit_string("SOCK_CLOSED_ERROR\r\n");
 				usb_transmit_int(ret_connect);
-				close(DATA_SOCK);
+				close(sn);
 				return ret_sock;
 			}
-			local_port++;  // avoid reusing local port
+			local_port++;  // avoid reusing static local port
 			if(local_port > 65000){
 				local_port = 49152;
 			}
@@ -827,7 +926,7 @@ int32_t get_camdata(void)
    			usb_transmit_string("SOCK_INIT\r\n");
 			#endif
 
-			while((ret_connect = connect(DATA_SOCK, cam_destip, cam_destport)) != SOCK_OK)  // -4 ,-13 timeout zu kurz?
+			while((ret_connect = connect(sn, cam_destip, cam_destport)) != SOCK_OK)
 			{
 				#ifdef DEBUG_MODE
 				HAL_Delay(10);
@@ -846,17 +945,79 @@ int32_t get_camdata(void)
 }
 
 
-// original returning edge array. mod version shall return edge
 
-
-void convolution(const float *in, float *out, const float *kernel,
-                 const int nx, const int ny, const int kn,
-                 const bool normalize)
+int32_t close_cam_connection(void)
 {
-//	uint8_t MAX_BRIGHTNESS = 255;  // not used
-    const int khalf = kn / 2;  // half of kernel
-    float min = FLT_MAX, max = -FLT_MAX;  // min and max float values
+	int32_t ret_sock = 0;
+	int32_t ret_connect = 0;
+//	int32_t ret_rcv = 0;
+//	uint16_t size = 0;
+	uint16_t sn = 0; // using only socket 0
 
+	while(!getPHYCFGR());  // phy link check
+    switch(getSn_SR(sn))
+    {
+    	case SOCK_ESTABLISHED :
+     // send data here:
+    		send(sn, &cam_request_close, 1);
+    		// wait here between response
+    	    HAL_Delay(100);  // delay for network reply needed
+    		break;
+   		case SOCK_CLOSE_WAIT :
+			if((ret_connect=disconnect(sn)) != SOCK_OK) return ret_connect;
+			usb_transmit_string("CloseOK\r\n");
+   			break;
+   		case SOCK_CLOSED :
+   			usb_transmit_string("SOCK_CLOSED\r\n");
+			if((ret_sock=socket(sn, Sn_MR_TCP, local_port, 0x0)) != sn)
+			{
+				usb_transmit_string("SOCK_CLOSED_ERROR\r\n");
+				usb_transmit_int(ret_connect);
+				close(sn);
+				return ret_sock;
+			}
+			local_port++;  // avoid reusing static local port
+			if(local_port > 65000){
+				local_port = 49152;
+			}
+
+   			break;
+
+   		case SOCK_INIT :
+   			usb_transmit_string("SOCK_INIT\r\n");
+
+			while((ret_connect = connect(sn, cam_destip, cam_destport)) != SOCK_OK)
+			{
+				#ifdef DEBUG_MODE
+				HAL_Delay(10);
+				usb_transmit_string("Connect error return:");
+				usb_transmit_int(ret_connect);
+				usb_transmit_string("r\n");
+				usb_transmit_string("Reconnecting.\r\n");
+				#endif
+				return ret_connect;
+			}
+   			break;
+   		default :
+   			break;
+   }
+   return 0;  // finished
+}
+
+/**
+  * @brief	this function calculates a convolution between two matrices
+  * @param in		pointer to input matrix to convolute with
+  * @param out		pointer to output matrix
+  * @param kernel	pointer to convolution matrix kernel
+  * @param nx		x number of input matrix elements
+  * @param ny		y number of input matrix elements
+  * @param kn		kernel size of convolution matrix
+  * @retval none
+  */
+void convolution(const float *in, float *out, const float *kernel,
+                 const int nx, const int ny, const int kn )
+{
+    const int khalf = kn / 2;  // half of kernel
     for (int m = khalf; m < nx - khalf; m++)
     {
         for (int n = khalf; n < ny - khalf; n++)
@@ -888,6 +1049,7 @@ void convolution(const float *in, float *out, const float *kernel,
  * 2.5 <= sigma < 3.0 : 13 ...
  * kernelSize = 2 * int(2*sigma) + 3;
  */
+// function not in use
 void gaussian_filter(const float *in, float *out,
                      const int nx, const int ny, const float sigma)
 {
@@ -899,28 +1061,35 @@ void gaussian_filter(const float *in, float *out,
         for (int j = 0; j < n; j++) {
             kernel[c] = exp(-0.5 * (pow((i - mean) / sigma, 2.0) +
                                     pow((j - mean) / sigma, 2.0)))
-                        / (2 * M_PI * sigma * sigma);
+									/ (2 * M_PI * sigma * sigma);
             c++;
         }
-
-    convolution(in, out, kernel, nx, ny, n, true);
+    convolution(in, out, kernel, nx, ny, n);
 }
 
 
 
 
-
-float canny_bad_solution(void)
+/**
+  * @brief	experimantal function for edge calculation with sobel operator.
+  * 		original code from https://rosettacode.org/wiki/Canny_edge_detector
+  *
+  * @param none
+  * @retval none
+  */
+float canny_filter_mod(void)
 {
-	// detection hysteresis min, max
-	const float tmin = 0.5;
-	const float tmax = 1.0;
 
 	// matrix shape
     const int nx = 64;
     const int ny = 50;
 
-    // memory allocation in heap
+    // acces raw data in global array
+	float *in = &floatframe_buffer;
+
+    // memory allocation
+//  TODO: Find out, how calloc on stm works and why zeros are not filled
+    // memory allocation in heap	// bug? memory leak? wrong values for array? no dynamic memory alloc on stm32?
 //	float *in = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *G = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *after_Gx = calloc(nx * ny * sizeof(float), sizeof(float));
@@ -928,7 +1097,6 @@ float canny_bad_solution(void)
 //    float *nms = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *out = malloc(nx * ny * sizeof(float));
 
-	const float *in = &floatframe_buffer;
 
 // memory allocation in stack
 //    float G[nx * ny];
@@ -939,157 +1107,93 @@ float canny_bad_solution(void)
 //    float out[nx * ny];
 
 
-
-
-//    size_t isize = sizeof(out);
-//    usb_transmit_uint(isize);
-//    HAL_Delay(10000);
-//    	in = &floatbuf;
-
-    // sobel operator for convolution
+//	  experimental gaussian filter not in use
 //    gaussian_filter(in, out, nx, ny, sigma);
 
 
-// conventional intensity gradient calculation
+// intensity gradient calculation
 	const int32_t khalf = 1;
 	const int32_t kn = 3;
 
-	// bug? memory leak? wrong values for array? no dynamic memory alloc on stm32?
+	// sobel operato in x direction (not in use)
 	const float Gx[] = {-1.0, 0.0, 1.0,
 						-1.0, 0.0, 1.0,
 						-1.0, 0.0, 1.0};
-
+	// sobel operato in y direction
     const float Gy[] = { 1.0, 1.0, 1.0,
                          0.0, 0.0, 0.0,
                         -1.0,-1.0,-1.0};
 
-//    float testfloat = 0.0;
-//    for(int i = 0; i <3200; i++)  // ok
-//	{
-//		after_Gy[i] = testfloat;
-//	}
-	int outint;
+	// copy of convolution() function for testing.
+    // only gradient in y direction is calculated since
+    // edged never appear perpendicular to camera.
+    // this improves execution time a lot
+	for (int m = khalf; m < nx - khalf; m++)  // m from 1 to 63
+	{
+		for (int n = khalf; n < ny - khalf; n++)  // n from 1 to 49
+		{
+			float pixel = 0.0;
+			size_t c = 0;
+			for (int j = -khalf; j <= khalf; j++)  // j from -1 to 1
+			{
+				for (int i = -khalf; i <= khalf; i++)  // i from -1 to 1
+				{
+					// multiply input_array with kernel matrix
 
+					pixel += in[(n - j) * nx + m - i] * Gy[c];  //n*nx is zeilennummer , m is spaltennummer
+					c++;
+				}
+				//
+				// result of convolution is a gradient matrix
 
-	size_t row;
-	size_t column;
-	size_t pixel_position = row * nx + column;
+				after_Gy[n * nx + m] = pixel;
+// hier
+			    detect_edge_hysteresis( in[n * nx + m], after_Gy[n * nx + m], n * nx + m);
+			}
+		}
+	}
 
+		// gradient calculation in x direction (not in use)
+	/*
+	for (int m = khalf; m < nx - khalf; m++)
+	{
+		{
+			for (int n = khalf; n < ny - khalf; n++)
+			{
+				float pixel = 0.0;
+				size_t c = 0;
+				for (int j = -khalf; j <= khalf; j++)
+				{
+					for (int i = -khalf; i <= khalf; i++)
+					{
+						pixel += in[(n - j) * nx + m - i] * Gx[c];
+						c++;
+					}
+					after_Gx[n * nx + m] = pixel;
+				}
+			}
+		}
+	}
+	for (int i = 1; i < nx - 1; i++)
+	{
+		for (int j = 1; j < ny - 1; j++) {
+		 size_t c = i + nx * j; // i = column spalte, nx*j = row zeile
+  	     //G[c] = abs(after_Gx[c]) + abs(after_Gy[c]);
+		 G[c] = hypot(after_Gx[c], after_Gy[c]);
+		}
+	}
 
-	// gradient calculation in y direction
-        for (int m = khalf; m < nx - khalf; m++)  // m from 1 to 63
-        {
-            for (int n = khalf; n < ny - khalf; n++)  // n from 1 to 49
-            {
-                float pixel = 0.0;
-                float tmpflaot = 0.0;
-                size_t c = 0;
-                for (int j = -khalf; j <= khalf; j++)  // j from -1 to 1
-                {
-                    for (int i = -khalf; i <= khalf; i++)  // i from -1 to 1
-                    {
-                    	// multiply input_array with kernel matrix
-
-                        pixel += in[(n - j) * nx + m - i] * Gy[c];
-                        c++;
-                    }
-                    //
-                    // result of convolution is a gradient matrix
-                    after_Gy[n * nx + m] = pixel;
-                    // draw pixel on LCD
-                    drawedge(pixel, n * nx + m);
-                }
-            }
-    	}
-//			// gradient calculation in x direction (not in use)
-//        for (int m = khalf; m < nx - khalf; m++)
-//        {
-//        	{
-//                for (int n = khalf; n < ny - khalf; n++)
-//                {
-//                    float pixel = 0.0;
-//                    size_t c = 0;
-//                    for (int j = -khalf; j <= khalf; j++)
-//                    {
-//                        for (int i = -khalf; i <= khalf; i++)
-//                        {
-//                            pixel += in[(n - j) * nx + m - i] * Gx[c];
-//                            c++;
-//                        }
-//                        after_Gx[n * nx + m] = pixel;
-//                    }
-//                }
-//        	}
-//        }
-//		for (int i = 1; i < nx - 1; i++)
-//		{
-//			for (int j = 1; j < ny - 1; j++) {
-//			 size_t c = i + nx * j; // i = column spalte, nx*j = row zeile
-////			 G[c] = abs(after_Gx[c]) + abs(after_Gy[c]);
-//			 G[c] = hypot(after_Gx[c], after_Gy[c]);
-//			}
-//		}
+	*/
 
 
 
-//	usb_transmit_string("\n\roverwritten\n\r");
-
-//    	float outfloat = 0.0;
-////    	int outint;
-////    	//	int j = (3199-95);
-//    		int j = 300;
-//    		for(int i = j; i <j+90; i++)  // ok
-//    		{
-//    			usb_transmit_string("i = ");
-//    			usb_transmit_int(i);  //
-//    			usb_transmit_string(" - ");
-//    			outfloat = after_Gy[i];
-//    			usb_transmit_float(outfloat);  //
-////    			usb_transmit_int(outint);  //
-//
-//    			usb_transmit_string("\n\r");
-//    		}
-//    		HAL_Delay(300);
-//    		testfloatarray();
-//    		for(int i = 50; i <60; i++)  // ok
-//    		{
-//    			usb_transmit_string("i = ");
-//    			usb_transmit_int(i);  //
-//    			usb_transmit_string(" - ");
-//    			outfloat = floatframe_buffer[i];
-//    			usb_transmit_float(outfloat);  //
-//    			usb_transmit_string("\n\r");
-//    		}
-//
-//    		for(int i = 3120; i <3136; i++)  // ok
-//    		{
-//    			usb_transmit_string("i = ");
-//    			usb_transmit_int(i);  //
-//    			usb_transmit_string(" - ");
-//    			outfloat = floatframe_buffer[i];
-//    			usb_transmit_float(outfloat);  //
-//    			usb_transmit_string("\n\r");
-//    		}
-//
-//    		for(int i = 3189; i <3200; i++)  // ok
-//    		{
-//    			usb_transmit_string("i = ");
-//    			usb_transmit_int(i);  //
-//    			usb_transmit_string(" - ");
-//    			outfloat = floatframe_buffer[i];
-//    			usb_transmit_float(outfloat);  //
-//    			usb_transmit_string("\n\r");
-//    		}
-//        		set_LED(false);
-
-//		  free reserved memory
+//		  free reserved memory. not in use because memory allocation in stack used
 //        free(after_Gx);
 //        free(after_Gy);
 //        free(G);
 //        free(nms);
 
-//        return out;
-    		return 0;
+	return 0;
 }
 
 
