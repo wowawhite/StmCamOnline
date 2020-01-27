@@ -54,7 +54,7 @@
 /* USER CODE BEGIN PTD */
 enum pixelcolor_t {
     unreliable = 64,
-    edge = 128,
+    edge = 126,
 	no_edge = 0
 } pixelcolor;
 
@@ -102,7 +102,7 @@ enum pixelcolor_t {
 
 //  values for data exchange on UART1
 volatile uint8_t uart_request_flag = 0;
-volatile uint8_t uart_request_command = 0;
+volatile char uart_request_command = 0;
 
 // if edge is detected egde flag is set to 1, otherwise set to 0
 uint8_t edge_detected_flag = 0;
@@ -112,19 +112,18 @@ uint32_t edge_position_variable = 0;
 const char cam_request_cartesian = 'Z';	// request cartesian data from camera
 const char cam_request_radial = 'D';	// request radial data from camera
 const char cam_request_close = 'q';  // close connection to camera(not used)
-
-
-// LCD draw mode.
-// 0 = raw image. 1 = filtered image
-uint8_t LCDmode_flag = 0;
-
-
 static uint8_t msg[20]={0,};  // ethernet config debug printing
 
 
-const uint8_t cam_destip[4] = {192, 168, 178, 69};	// static ip for ethernet shield
+
+//************* control parameter ***************************************
+
+// LCD draw mode to start with. 0 = raw image. 1 = filtered image
+uint8_t LCDmode_flag = 0;
+const uint8_t cam_destip[4] = {192, 168, 178, 69};	// camera has static ip
 const uint16_t cam_destport = 50002;	//	camera ip port
 uint16_t local_port = 49152;	// this must not be constant and is changed in runtime
+
 
 // hystetesis values for edge detection
 // values less tmin is falling edges (white)
@@ -132,6 +131,8 @@ uint16_t local_port = 49152;	// this must not be constant and is changed in runt
 // values larger tmax are rising edges (white)
 const float tmin = -0.15;
 const float tmax = 0.15;
+//***********************************************************************
+
 
 volatile uint8_t binarydata_buffer0[CAM_BINARY_BUFSIZE];  // 13176 bytes raw image data
 volatile float floatframe_buffer[CAM_FLOAT_BUFFSIZE];  // 3200 floats, header 94 floats
@@ -183,6 +184,7 @@ void drawedge(uint32_t position, uint32_t color);
 void detect_edge_hysteresis( float raw_input, float filter_input, int32_t position);
 float accessfloatarray(uint8_t *buf, uint8_t floatposition);
 void arrayreshaping(uint8_t *arrptr);
+void set_edge_flag(int32_t edgeposition);
 void uart_response(int32_t edgeposition);
 /**
   * @brief  This function is used to print parts of the float array for testing and debugging
@@ -235,20 +237,24 @@ void testfloatarray(void)
 }
 
 
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-//{
-//  if (huart->Instance == USART1)
-//  {
-//
-//	  usb_transmit_string("\r\nuart\r\n");
-////	HAL_UART_Transmit(&huart2, &point1, 1, 100);  // debug point 1 reached
-////    /* Transmit one byte with 100 ms timeout */
-////    HAL_UART_Transmit(&huart2, &byte, 1, 100);
-//
-//    /* Receive one byte in interrupt mode */
-//    HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // have to enable interrupt again
-//  }
-//}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
+{
+  if (huart->Instance == USART1)
+  {
+	  if(uart_request_command == 'b')
+	{
+	  usb_transmit_string("\r\nuart\r\n");
+	  uart_request_flag = true;
+	}
+
+//	HAL_UART_Transmit(&huart2, &point1, 1, 100);  // debug point 1 reached
+//    /* Transmit one byte with 100 ms timeout */
+//    HAL_UART_Transmit(&huart2, &byte, 1, 100);
+
+    /* Receive one byte in interrupt mode */
+    HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // have to enable interrupt again
+  }
+}
 
 // Ethernet init procedure
 void IO_LIBRARY_Init(void) {
@@ -361,13 +367,15 @@ int main(void)
 	arrayreshaping(binarydata_buffer0);  // reshape and print raw camera data
 	canny_filter_mod();	 // filter and print filtered camera data
 
+	uart_response(edge_position_variable);
+	set_edge_flag(edge_position_variable);
   // Transmit refresh rate
 	char stringbuf[10];
 	stoptime = HAL_GetTick();
 	difftime = stoptime - starttime;
 	sprintf(stringbuf,  "%i", difftime);
-	usb_transmit_int(difftime);
-	usb_transmit_string("ms\r\n");
+//	usb_transmit_int(difftime);
+//	usb_transmit_string("ms\r\n");
 	ILI9341_Draw_Text( stringbuf, 100,300, BLACK, 2, WHITE);
 
     /* USER CODE END WHILE */
@@ -801,10 +809,6 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 /**
   * @brief  This function reshapes the raw camera data to a float array
   * 		reshaped data is written to floatframe_buffer global array
-  *
-  * 		possibly containing a bug shifting output array because
-  * 		output image is shifted
-  *
   * @param	pointer to raw data array
   * @retval none
   */
@@ -815,7 +819,7 @@ void arrayreshaping(uint8_t *arrptr)
 	{
 		// input pointer is shifted by 376 bit to cut off the data header
 		tmpptr = arrptr + 376 + 4*i;
-		floatframe_buffer[i] = swap2float(tmpptr );  // possible bug: data shift in input array
+		floatframe_buffer[i] = swap2float(tmpptr );
 		if(LCDmode_flag == 0)
 		{
 			drawsquare(floatframe_buffer[i],i);
@@ -823,9 +827,15 @@ void arrayreshaping(uint8_t *arrptr)
 	}
 }
 
+/**
+  * @brief  This function reshapes the raw camera data to a float array
+  * 		reshaped data is written to floatframe_buffer global array
+  * @param	pointer to raw data array
+  * @retval none
+  */
 void set_edge_flag(int32_t edgeposition)
 {
-	if (edgeposition == 0x7FF)
+	if (edgeposition == 0x7FFF)
 	{
 		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 0);
 		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
@@ -839,7 +849,9 @@ void uart_response(int32_t edgeposition)
 {
 	if(uart_request_flag == true)	// if request flag is set
 	{
-		HAL_UART_Transmit(&huart1, edgeposition, 4, 100);
+		char stringbuf[10];
+		sprintf(stringbuf,  "%i", edgeposition);
+		HAL_UART_Transmit(&huart1,  stringbuf, strlen(stringbuf) , 100);
 	}
 	uart_request_flag = false;  // clear request flag
 }
@@ -848,9 +860,6 @@ void uart_response(int32_t edgeposition)
   * @brief this function requests data by using the w5500 chip socket feature.
   * 		after 5ms delay receiving buffer is read to 'binarydata_buffer0' global array
   * 		the socket is kept alive all the time so reconnect is not needed.
-  * 		yet there is still a bug on system startup which happens randomly.
-  * 		this implementation is not very adaptive and cannot close a running
-  * 		connection on error.
   *
   * @param none
   * @retval 0 when function finishes successfully
@@ -860,6 +869,9 @@ int32_t get_cam_data(uint8_t *inputvar)
 	int32_t ret_sock = 0;
 	int32_t ret_connect = 0;
 	int32_t ret_rcv = 0;
+	int32_t bytes_toread;
+	int32_t bytes_received;
+	int32_t bytes_burst;
 	uint16_t size = 0;
 	uint16_t sn = 0; // using only socket 0
 
@@ -870,25 +882,17 @@ int32_t get_cam_data(uint8_t *inputvar)
      // send data here:
     		send(sn, &inputvar, 1);
     		// wait here between response
-    	    HAL_Delay(4);  // delay for network reply needed
-    	     // check if something is in rx buffer:  // propabely bug when receiving data
+//    	    HAL_Delay(4);  // delay for network reply needed
     		if((size = getSn_RX_RSR(sn)) > 0)
     		{ // If data in rx buffer
-    			ret_rcv = recv(sn, binarydata_buffer0, CAM_BINARY_BUFSIZE);
+    			bytes_toread = CAM_BINARY_BUFSIZE;
+    			bytes_received = 0;
+    			while(bytes_toread>=1)
+    			{
+    				bytes_burst = recv(sn, &binarydata_buffer0[bytes_received], bytes_toread);
+    				bytes_received = bytes_received + bytes_burst;
+    				bytes_toread = CAM_BINARY_BUFSIZE - bytes_received;
 
-				if(ret_rcv == CAM_BINARY_BUFSIZE)  // if 13176 bytes received
-				{
-//					#ifdef DEBUG:
-//					usb_transmit_string("RX OK.\n\r");
-//					#endif cam_request_close
-//					send(sn, &cam_request_close, 1);
-				} else {
-					usb_transmit_string("\n\rRX Err:");
-					usb_transmit_int(ret_rcv);  //
-					usb_transmit_string("\n\r");
-					// hier timeout einbauen, da infinite loop in SOCK_ESTABLISHED
-//					send(sn, &cam_request_close, 1);
-//					HAL_Delay(5);  // delay for network reply needed
 				}
     		} else {
     			usb_transmit_string("/r/n Transmission error \r\n");
