@@ -88,13 +88,12 @@
 //#include "main.h"   // maybe this can be deleted
 
 /* Global Variables ------------------------------------------------------------------*/
-//volatile uint16_t LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
-//volatile uint16_t LCD_WIDTH	 = ILI9341_SCREEN_WIDTH;
-//#define ILI9341_SCREEN_HEIGHT 320
-//#define ILI9341_SCREEN_WIDTH 	240
+volatile uint16_t LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
+volatile uint16_t LCD_WIDTH	 = ILI9341_SCREEN_WIDTH;
 
-volatile uint16_t LCD_HEIGHT = 240;
-volatile uint16_t LCD_WIDTH = 320;
+
+//volatile uint16_t LCD_HEIGHT = 240;
+//volatile uint16_t LCD_WIDTH = 320;
 
 //LCD_HEIGHT;
 //LCD_WIDTH;
@@ -173,25 +172,33 @@ void ILI9341_Set_Rotation(uint8_t Rotation)
 		{
 			case SCREEN_VERTICAL_1:
 				ILI9341_Write_Data(0x40|0x08);
-				LCD_WIDTH = 240;
-				LCD_HEIGHT = 320;
+//				LCD_WIDTH = 240;
+//				LCD_HEIGHT = 320;
+				LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
+				LCD_WIDTH	 = ILI9341_SCREEN_WIDTH;
 				break;
 			case SCREEN_HORIZONTAL_1:
 				ILI9341_Write_Data(0x20|0x08);
-				LCD_WIDTH  = 320;
-				LCD_HEIGHT = 240;
+//				LCD_WIDTH  = 320;
+//				LCD_HEIGHT = 240;
+				LCD_HEIGHT = ILI9341_SCREEN_WIDTH;
+				LCD_WIDTH	 = ILI9341_SCREEN_HEIGHT;
 				break;
 			case SCREEN_VERTICAL_2:
 				ILI9341_Write_Data(0x80|0x08);
-				LCD_WIDTH  = 240;
-				LCD_HEIGHT = 320;
+//				LCD_WIDTH  = 240;
+//				LCD_HEIGHT = 320;
+				LCD_HEIGHT = ILI9341_SCREEN_HEIGHT;
+				LCD_WIDTH	 = ILI9341_SCREEN_WIDTH;
 				break;
 			case SCREEN_HORIZONTAL_2:
 				ILI9341_Write_Data(0x40|0x80|0x20|0x08);
 //				LCD_WIDTH  = 320;
 //				LCD_HEIGHT = 240;
-				LCD_WIDTH  = 320;
-				LCD_HEIGHT = 480;
+//				LCD_WIDTH  = 320;
+//				LCD_HEIGHT = 480;
+				LCD_HEIGHT = ILI9341_SCREEN_WIDTH;
+				LCD_WIDTH	 = ILI9341_SCREEN_HEIGHT;
 				break;
 			default:
 				//EXIT IF SCREEN ROTATION NOT VALID!

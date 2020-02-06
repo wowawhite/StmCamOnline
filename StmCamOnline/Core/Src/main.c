@@ -118,7 +118,7 @@ static uint8_t msg[20]={0,};  // ethernet config debug printing
 //************* control parameter ***************************************
 
 // LCD draw mode to start with. 0 = raw image. 1 = filtered image
-uint8_t LCDmode_flag = 0;
+uint8_t LCDmode_flag = 1;
 const uint8_t cam_destip[4] = {192, 168, 178, 69};	// camera has static ip
 const uint16_t cam_destport = 50002;	//	camera ip port
 uint16_t local_port = 49152;	// this must not be constant and is changed in runtime
@@ -619,8 +619,8 @@ void drawsquare(float inputvar, uint32_t position)
 {
 	uint16_t zoom = 4;
 	uint16_t row ,column;
-	column = (position / 64)*zoom;  // y
-	row = (position % 64)*zoom;  // x
+	column = ((position / 64))*zoom;  // y
+	row = (64-(position % 64))*zoom;  // x
 	ILI9341_Draw_Rectangle(column,row , zoom, zoom, yield_depth_color(inputvar));
 }
 
@@ -750,8 +750,8 @@ void drawedge(uint32_t position, uint32_t color)
 		uint16_t zoomx = 4;
 		uint16_t zoomy = 4;
 		uint16_t row ,column;
-		column = ((position) / 64)*zoomy;  // y
-		row = ((position) % 64)*zoomx;  // x
+		column = ((position / 64))*zoomy;  // y
+		row = (64-(position % 64))*zoomx;  // x
 		ILI9341_Draw_Rectangle(column, row, zoomy, zoomx, color);
 }
 
@@ -824,10 +824,27 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
   * @param	pointer to raw data array
   * @retval none
   */
-void arrayreshaping(uint8_t *arrptr)
+void arrayreshaping_bak(uint8_t *arrptr)
 {
 	uint8_t *tmpptr;
 	for(size_t i = 0; i < 3200; i++)  // maybe 3200 - i
+	{
+		// input pointer is shifted by 376 bit to cut off the data header
+		tmpptr = arrptr + 376 + 4*i;
+		floatframe_buffer[i] = swap2float(tmpptr );
+		#ifdef LCD_USAGE
+		if(LCDmode_flag == 0)
+		{
+			drawsquare(floatframe_buffer[i],i);
+		}
+		#endif
+	}
+}
+
+void arrayreshaping(uint8_t *arrptr)
+{
+	uint8_t *tmpptr;
+	for(int i = 0; i < 3200; i++)  // maybe 3200 - i
 	{
 		// input pointer is shifted by 376 bit to cut off the data header
 		tmpptr = arrptr + 376 + 4*i;
