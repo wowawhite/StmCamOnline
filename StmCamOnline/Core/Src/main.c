@@ -62,9 +62,8 @@ enum pixelcolor_t {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEBUG_MODE
-
-//#define DATA_SOCK	0
+#define DEBUG_MODE  // debug mode enables printing to USB. Debug should be always enabled
+#define LCD_USAGE	// uncomment to enable LCD
 
 /* USER CODE END PD */
 
@@ -109,9 +108,9 @@ uint8_t edge_detected_flag = 0;
 // if edge is detected this variable becomes the number of detection pixel
 uint32_t edge_position_variable = 0;
 
-const char cam_request_cartesian = 'Z';	// request cartesian data from camera
-const char cam_request_radial = 'D';	// request radial data from camera
-const char cam_request_close = 'q';  // close connection to camera(not used)
+const uint8_t cam_request_cartesian = 'Z';	// request cartesian data from camera
+const uint8_t cam_request_radial = 'D';	// request radial data from camera
+const uint8_t cam_request_close = 'q';  // close connection to camera(not used)
 static uint8_t msg[20]={0,};  // ethernet config debug printing
 
 
@@ -134,8 +133,8 @@ const float tmax = 0.15;
 //***********************************************************************
 
 
-volatile uint8_t binarydata_buffer0[CAM_BINARY_BUFSIZE];  // 13176 bytes raw image data
-volatile float floatframe_buffer[CAM_FLOAT_BUFFSIZE];  // 3200 floats, header 94 floats
+uint8_t binarydata_buffer0[CAM_BINARY_BUFSIZE];  // 13176 bytes raw image data
+float floatframe_buffer[CAM_FLOAT_BUFFSIZE];  // 3200 floats, header 94 floats
 
 /* USER CODE END PV */
 
@@ -333,13 +332,17 @@ int main(void)
   ILI9341_Init();	// LCD Lib
   HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // Interrupt on UART1 enabled
 
+
   /* USER CODE END 2 */
  
  
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-//  close_cam_connection();  // this function makes no difference in performance
+
+	#ifndef LCD_USAGE
+	ILI9341_Draw_Text( "LCD DISABLED", 50,300, BLACK, 2, WHITE);
+	#endif
   uint32_t starttime;
   uint32_t stoptime;
   uint32_t difftime;
@@ -374,9 +377,14 @@ int main(void)
 	stoptime = HAL_GetTick();
 	difftime = stoptime - starttime;
 	sprintf(stringbuf,  "%i", difftime);
-//	usb_transmit_int(difftime);
-//	usb_transmit_string("ms\r\n");
+	#ifdef DEBUG_MODE
+	usb_transmit_int(difftime);
+	usb_transmit_string("ms\r\n");
+	#endif
+
+	#ifdef LCD_USAGE
 	ILI9341_Draw_Text( stringbuf, 100,300, BLACK, 2, WHITE);
+	#endif
 
     /* USER CODE END WHILE */
 
@@ -739,11 +747,12 @@ uint32_t yield_depth_color(float input)
 void drawedge(uint32_t position, uint32_t color)
 {
 
-		uint16_t zoom = 4;
+		uint16_t zoomx = 4;
+		uint16_t zoomy = 4;
 		uint16_t row ,column;
-		column = ((position) / 64)*zoom;  // y
-		row = ((position) % 64)*zoom;  // x
-		ILI9341_Draw_Rectangle(column, row, zoom, zoom, color);
+		column = ((position) / 64)*zoomy;  // y
+		row = ((position) % 64)*zoomx;  // x
+		ILI9341_Draw_Rectangle(column, row, zoomy, zoomx, color);
 }
 
 // changed
@@ -782,27 +791,30 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 	if(is_negative(raw_input)==true)
 	{
 		edge_position_variable = -position;  // unreliable data detected at this position
+		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
 			drawedge(position, yield_edge_color(unreliable));
 		}
-
+		#endif
 	}else if(filter_input<tmin || filter_input>tmax)
 	{
 		edge_position_variable = position;  // edge detected on this position
+		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
 			drawedge(position, yield_edge_color(edge));
 		}
-
+		#endif
 
 	} else {
 		edge_position_variable = 0x7FFF;  //  is 32767 in int and uint to avoid confusion
-
+		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
 			drawedge(position, yield_edge_color(no_edge));
 		}
+		#endif
 	}
 }
 
@@ -820,10 +832,12 @@ void arrayreshaping(uint8_t *arrptr)
 		// input pointer is shifted by 376 bit to cut off the data header
 		tmpptr = arrptr + 376 + 4*i;
 		floatframe_buffer[i] = swap2float(tmpptr );
+		#ifdef LCD_USAGE
 		if(LCDmode_flag == 0)
 		{
 			drawsquare(floatframe_buffer[i],i);
 		}
+		#endif
 	}
 }
 
@@ -882,7 +896,11 @@ int32_t get_cam_data(uint8_t *inputvar)
      // send data here:
     		send(sn, &inputvar, 1);
     		// wait here between response
-//    	    HAL_Delay(4);  // delay for network reply needed
+
+				#ifndef LCD_USAGE
+				HAL_Delay(55);  // delay for network reply needed
+				#endif
+
     		if((size = getSn_RX_RSR(sn)) > 0)
     		{ // If data in rx buffer
     			bytes_toread = CAM_BINARY_BUFSIZE;
@@ -895,10 +913,10 @@ int32_t get_cam_data(uint8_t *inputvar)
 
 				}
     		} else {
-    			usb_transmit_string("/r/n Transmission error \r\n");
+    			usb_transmit_string("\r\n Transmission error \r\n");
 				usb_transmit_int(size);
 //				send(sn, &cam_request_close, 1);
-//				HAL_Delay(5);  // delay for network reply needed
+
     		}
     		break;
    		case SOCK_CLOSE_WAIT :
@@ -1151,7 +1169,6 @@ float canny_filter_mod(void)
 				// result of convolution is a gradient matrix
 
 				after_Gy[n * nx + m] = pixel;
-// hier
 			    detect_edge_hysteresis( in[n * nx + m], after_Gy[n * nx + m], n * nx + m);
 			}
 		}
