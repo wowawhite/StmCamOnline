@@ -70,25 +70,25 @@ enum pixelcolor_t {
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-#ifdef DEBUG_MODE:
-	#define NETWORK_MSG  		 "Network configuration:\r\n"
-	#define IP_MSG 		 		 "  IP ADDRESS:  %d.%d.%d.%d\r\n"
-	#define NETMASK_MSG	         "  NETMASK:     %d.%d.%d.%d\r\n"
-	#define GW_MSG 		 		 "  GATEWAY:     %d.%d.%d.%d\r\n"
-	#define MAC_MSG		 		 "  MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n"
 
-	#define PRINT_NETINFO(netInfo) do { 																					\
-	  HAL_UART_Transmit(&huart2, (uint8_t*)NETWORK_MSG, strlen(NETWORK_MSG), 100);											\
-	  sprintf(msg, MAC_MSG, netInfo.mac[0], netInfo.mac[1], netInfo.mac[2], netInfo.mac[3], netInfo.mac[4], netInfo.mac[5]);\
-	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
-	  sprintf(msg, IP_MSG, netInfo.ip[0], netInfo.ip[1], netInfo.ip[2], netInfo.ip[3]);										\
-	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
-	  sprintf(msg, NETMASK_MSG, netInfo.sn[0], netInfo.sn[1], netInfo.sn[2], netInfo.sn[3]);								\
-	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
-	  sprintf(msg, GW_MSG, netInfo.gw[0], netInfo.gw[1], netInfo.gw[2], netInfo.gw[3]);										\
-	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
-	} while(0)
-#endif
+#define NETWORK_MSG  		 "Network configuration:\r\n"
+#define IP_MSG 		 		 "  IP ADDRESS:  %d.%d.%d.%d\r\n"
+#define NETMASK_MSG	         "  NETMASK:     %d.%d.%d.%d\r\n"
+#define GW_MSG 		 		 "  GATEWAY:     %d.%d.%d.%d\r\n"
+#define MAC_MSG		 		 "  MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n"
+
+#define PRINT_NETINFO(netInfo) do { 																					\
+  HAL_UART_Transmit(&huart2, (uint8_t*)NETWORK_MSG, strlen(NETWORK_MSG), 100);											\
+  sprintf(msg, MAC_MSG, netInfo.mac[0], netInfo.mac[1], netInfo.mac[2], netInfo.mac[3], netInfo.mac[4], netInfo.mac[5]);\
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
+  sprintf(msg, IP_MSG, netInfo.ip[0], netInfo.ip[1], netInfo.ip[2], netInfo.ip[3]);										\
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
+  sprintf(msg, NETMASK_MSG, netInfo.sn[0], netInfo.sn[1], netInfo.sn[2], netInfo.sn[3]);								\
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
+  sprintf(msg, GW_MSG, netInfo.gw[0], netInfo.gw[1], netInfo.gw[2], netInfo.gw[3]);										\
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
+} while(0)
+
 #define CAM_BINARY_BUFSIZE 13176
 #define CAM_FLOAT_BUFFSIZE 3294
 
@@ -113,7 +113,8 @@ const uint8_t cam_request_radial = 'D';	// request radial data from camera
 const uint8_t cam_request_close = 'q';  // close connection to camera(not used)
 static uint8_t msg[20]={0,};  // ethernet config debug printing
 
-
+uint8_t newframe_flag = 0;
+uint8_t oldframe_flag = 0;
 
 //************* control parameter ***************************************
 
@@ -185,10 +186,12 @@ float accessfloatarray(uint8_t *buf, uint8_t floatposition);
 void arrayreshaping(uint8_t *arrptr);
 void set_edge_flag(int32_t edgeposition);
 void uart_response(int32_t edgeposition);
+
 /**
   * @brief  This function is used to print parts of the float array for testing and debugging
   * @retval none
   */
+/*
 void testfloatarray(void)
 {
 	float outfloat;
@@ -234,7 +237,7 @@ void testfloatarray(void)
 			usb_transmit_string("\n\r");
 		}
 }
-
+*/
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
 {
@@ -276,7 +279,10 @@ void IO_LIBRARY_Init(void) {
 	wizchip_setnetinfo(&netInfo);
 
 	wizchip_getnetinfo(&netInfo);
+#ifdef DEBUG_MODE
 	PRINT_NETINFO(netInfo);
+#endif
+
 	// network timeout configuration
 	wiz_NetTimeout gWIZNETTIME = {.retry_cnt = 3,         //RCR = 3
 	                               .time_100us = 2000};     //RTR = 2000
@@ -343,6 +349,7 @@ int main(void)
 	#ifndef LCD_USAGE
 	ILI9341_Draw_Text( "LCD DISABLED", 50,300, BLACK, 2, WHITE);
 	#endif
+
   uint32_t starttime;
   uint32_t stoptime;
   uint32_t difftime;
@@ -377,6 +384,8 @@ int main(void)
 	stoptime = HAL_GetTick();
 	difftime = stoptime - starttime;
 	sprintf(stringbuf,  "%i", difftime);
+
+
 	#ifdef DEBUG_MODE
 	usb_transmit_int(difftime);
 	usb_transmit_string("ms\r\n");
@@ -524,20 +533,20 @@ void checkpushbutton(void)
 	}
 }
 
-
 /**
   * @brief  Low level check if float is negative value.
+  * @param input float value for check. this should work with little and
+  * big endian systems.
   * @retval 1 if x is negative, otherwise 0
   */
-bool is_negative(float x) {  // fast check for negative float // only big endian?
-//	usb_transmit_byte(signbit(x));
+bool is_negative(float x) {
     return signbit(x);
 }
 
-
 /**
   * @brief  Swapping uint32_t from big endian to little endian, compiler optimized version
-  * @retval uint32_t
+  * @param uint32_t variable for byteswap
+  * @retval uint32_t , swapped
   */
 inline uint32_t SwapByteOrder_32(uint32_t a)  // ok
 {
@@ -546,7 +555,8 @@ inline uint32_t SwapByteOrder_32(uint32_t a)  // ok
 
 /**
   * @brief  Swapping 4 bytes of uint8_t array from big endian to little endian.
-  * @retval uint32_t
+  * @param bytes buffer to access by punning
+  * @retval uint32_t value of 4 bytes in array, swapped
   */
 inline uint32_t byteswap2little(uint8_t *value)
 {
@@ -557,7 +567,8 @@ inline uint32_t byteswap2little(uint8_t *value)
 
 /**
   * @brief  Showing uint32_t bit representation of float value
-  * @retval uint32_t type punned value. not byteswapped version
+  * @param float value to access by punning
+  * @retval uint32_t type representation of float value
   */
 inline uint32_t checkfloatbytes(float C)
 {
@@ -584,6 +595,7 @@ float pun2float(const uint8_t *buf)
 }
 /**
   * @brief  Swapping 4 bytes of uint8_t array and type punning access of 4 bytes as a 32 bit little endian float.
+  * @param bytes buffer to access by punning
   * @retval float from swapped 4 bytes
   */
 float swap2float(uint8_t *buf)
@@ -598,7 +610,8 @@ float swap2float(uint8_t *buf)
 
 /**
   * @brief  Type punning access of 4 bytes as a 32 bit little endian uint32_t.
-  * @retval uint32_t type from 8 bytes.
+  * @param bytes buffer to access by punning
+  * @retval uint32_t type from 4 bytes.
   */
 uint32_t pun2int(const uint8_t *buf)
 {
@@ -612,7 +625,11 @@ uint32_t pun2int(const uint8_t *buf)
 
 
 /**
-  * @brief  Type punning access of 4 bytes as a 32 bit swapped bytes float.
+  * @brief  this function draws a single square(pixel) on the lcd on
+  * requested position. color is calculated with the function yield_depth_color
+  * the pixels are rectangular and can be zoomed by zoom variable.
+  * @param float input color value
+  * @param pixel position correlating camera array pixel position
   * @retval none
   */
 void drawsquare(float inputvar, uint32_t position)
@@ -620,7 +637,7 @@ void drawsquare(float inputvar, uint32_t position)
 	uint16_t zoom = 4;
 	uint16_t row ,column;
 	column = ((position / 64))*zoom;  // y
-	row = (64-(position % 64))*zoom;  // x
+	row = (64-(position % 64))*zoom;  // x, mirroring on x-axis
 	ILI9341_Draw_Rectangle(column,row , zoom, zoom, yield_depth_color(inputvar));
 }
 
@@ -628,6 +645,14 @@ void drawsquare(float inputvar, uint32_t position)
 /**
   * @brief  Type punning access of 4 bytes as a 32 bit swapped bytes float.
   * @retval uint32_t
+  */
+/**
+  * @brief  Swapping 4 bytes of uint8_t array and type punning access
+  * of 4 bytes as a 32 bit little endian float.
+  * This version implements punning access on random buffer array position.
+  * @param bytes buffer to access by punning
+  * @param start position of buffer array access
+  * @retval float from swapped 4 bytes
   */
 float accessfloatarray(uint8_t *buf, uint8_t floatposition)
 {
@@ -776,10 +801,12 @@ uint32_t yield_edge_color(int8_t edge_value)
 }
 
 /**
-  * @brief this function yields WHITE if input value is over hysteresis value,
-  * 		BLACK if input value is between hysteresis value which is noise filtering
-  * 		and RED if input value is a big negative number, which is unreliable image data
-  * 		(camera returns -1 or -2 while detecting false illumination )
+  * @brief this function detects edge, no edge or unreliable pixel
+  * with tmin, tmax and input pixel. if an input pixel is unreliable,
+  * edge_position_variable is position of the unreliable pixel signed negative.
+  * if an edge is detected, edge_position_variable is position of the unreliable pixel signed positive.
+  * if no edge is detected, edge_position_variable is 0x7ff, wich is (dec) 32767.
+  * also this function draws an edge pixel depending on previous detection.
   * @param raw data float value at raw array position
   * @param calculated fliter value from colvolution at raw data array position
   * @param center position from raw data input array
@@ -824,23 +851,6 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
   * @param	pointer to raw data array
   * @retval none
   */
-void arrayreshaping_bak(uint8_t *arrptr)
-{
-	uint8_t *tmpptr;
-	for(size_t i = 0; i < 3200; i++)  // maybe 3200 - i
-	{
-		// input pointer is shifted by 376 bit to cut off the data header
-		tmpptr = arrptr + 376 + 4*i;
-		floatframe_buffer[i] = swap2float(tmpptr );
-		#ifdef LCD_USAGE
-		if(LCDmode_flag == 0)
-		{
-			drawsquare(floatframe_buffer[i],i);
-		}
-		#endif
-	}
-}
-
 void arrayreshaping(uint8_t *arrptr)
 {
 	uint8_t *tmpptr;
@@ -859,24 +869,40 @@ void arrayreshaping(uint8_t *arrptr)
 }
 
 /**
-  * @brief  This function reshapes the raw camera data to a float array
-  * 		reshaped data is written to floatframe_buffer global array
-  * @param	pointer to raw data array
+  * @brief  this function  sets a flag on USART_DATAFLAG_Pin and turns on the LED
+  * if an edge or an unreliable pixel is detected
+  * @param	edge position value calculated by detect_edge_hysteresis()
   * @retval none
   */
+/* TODO: bug in this function. LED is set only if edge detected on position 0|0
+ * debug idea: keep LED flag until new frame is loaded
+ * first try not working properly
+ */
 void set_edge_flag(int32_t edgeposition)
 {
-	if (edgeposition == 0x7FFF)
+	if (edgeposition != 0x7FFF)
 	{
-		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 0);
-		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
-	} else {
+		set_LED(1);  // on
 		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 1);
-		HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, 1);
+	} else {
+//		if(oldframe_flag == newframe_flag)
+//		{
+//			set_LED(0);  // off
+//			HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
+//			oldframe_flag = newframe_flag;
+//		}
+		set_LED(0);  // off
+		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
 	}
 }
-
-void uart_response(int32_t edgeposition)
+/**
+  * @brief  this function responds on uart request on UART1.
+  * the response is a string containing the edge position calculated
+  * by detect_edge_hysteresis() function
+  * @param	edge position value calculated by detect_edge_hysteresis()
+  * @retval none
+  */
+void uart_response(int32_t edgeposition)  // this one is for testing
 {
 	if(uart_request_flag == true)	// if request flag is set
 	{
@@ -905,7 +931,7 @@ int32_t get_cam_data(uint8_t *inputvar)
 	int32_t bytes_burst;
 	uint16_t size = 0;
 	uint16_t sn = 0; // using only socket 0
-
+	newframe_flag ^= 1;  // toggle on new frame
 	while(!getPHYCFGR());  // phy link check
     switch(getSn_SR(sn))
     {
@@ -983,7 +1009,14 @@ int32_t get_cam_data(uint8_t *inputvar)
    return 0;  // finished
 }
 
-
+/**
+  * @brief this function closes camera connection by
+  * sending a 'q' char to the camera.
+  * the function is not used since the connection must not
+  * be shut down on continuous operation
+  * @param none
+  * @retval 0 when function finishes successfully
+  */
 
 int32_t close_cam_connection(void)
 {
@@ -1154,11 +1187,11 @@ float canny_filter_mod(void)
 	const int32_t khalf = 1;
 	const int32_t kn = 3;
 
-	// sobel operato in x direction (not in use)
+	// sobel operator in x direction (not in use)
 	const float Gx[] = {-1.0, 0.0, 1.0,
 						-1.0, 0.0, 1.0,
 						-1.0, 0.0, 1.0};
-	// sobel operato in y direction
+	// sobel operator in y direction
     const float Gy[] = { 1.0, 1.0, 1.0,
                          0.0, 0.0, 0.0,
                         -1.0,-1.0,-1.0};
