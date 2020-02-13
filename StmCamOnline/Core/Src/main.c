@@ -62,8 +62,9 @@ enum pixelcolor_t {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEBUG_MODE  // debug mode enables printing to USB. Debug should be always enabled
-#define LCD_USAGE	// uncomment to enable LCD
+//#define PRINT_USB  // enables printing Network parameters and to USB serial monitor
+#define LCD_USAGE	// comment out to disable LCD usage
+#define DEBUG_PRINT  // normally outcommented. print debug stuff to USB serial monitor
 
 /* USER CODE END PD */
 
@@ -129,8 +130,8 @@ uint16_t local_port = 49152;	// this must not be constant and is changed in runt
 // values less tmin is falling edges (white)
 // values between tmin and tmax is noise (black)
 // values larger tmax are rising edges (white)
-const float tmin = -0.15;
-const float tmax = 0.15;
+const float tmin = -0.45;
+const float tmax = 0.45;
 //***********************************************************************
 
 
@@ -279,7 +280,7 @@ void IO_LIBRARY_Init(void) {
 	wizchip_setnetinfo(&netInfo);
 
 	wizchip_getnetinfo(&netInfo);
-#ifdef DEBUG_MODE
+#ifdef PRINT_USB
 	PRINT_NETINFO(netInfo);
 #endif
 
@@ -386,7 +387,7 @@ int main(void)
 	sprintf(stringbuf,  "%i", difftime);
 
 
-	#ifdef DEBUG_MODE
+	#ifdef PRINT_USB
 	usb_transmit_int(difftime);
 	usb_transmit_string("ms\r\n");
 	#endif
@@ -778,9 +779,13 @@ void drawedge(uint32_t position, uint32_t color)
 		column = ((position / 64))*zoomy;  // y
 		row = (64-(position % 64))*zoomx;  // x
 		ILI9341_Draw_Rectangle(column, row, zoomy, zoomx, color);
+		#ifdef DEBUG_PRINT
+		HAL_Delay(1);
+		#endif
+
 }
 
-// changed
+
 /**
   * @brief this function yields WHITE if input value is detected edge,
   * 		BLACK if input value is no edge detected
@@ -824,8 +829,12 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 			drawedge(position, yield_edge_color(unreliable));
 		}
 		#endif
+
+
 	}else if(filter_input<tmin || filter_input>tmax)
 	{
+
+
 		edge_position_variable = position;  // edge detected on this position
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
@@ -956,20 +965,21 @@ int32_t get_cam_data(uint8_t *inputvar)
 
 				}
     		} else {
+				#ifdef PRINT_USB:
     			usb_transmit_string("\r\n Transmission error \r\n");
 				usb_transmit_int(size);
-//				send(sn, &cam_request_close, 1);
+				#endif
 
     		}
     		break;
    		case SOCK_CLOSE_WAIT :
 			if((ret_connect=disconnect(sn)) != SOCK_OK) return ret_connect;
-			#ifdef DEBUG_MODE:
+			#ifdef PRINT_USB:
 			usb_transmit_string("CloseOK\r\n");
 			#endif
    			break;
    		case SOCK_CLOSED :
-			#ifdef DEBUG_MODE:
+			#ifdef PRINT_USB:
    			usb_transmit_string("SOCK_CLOSED\r\n");
 			#endif
 			if((ret_sock=socket(sn, Sn_MR_TCP, local_port, 0x0)) != sn)
@@ -987,13 +997,13 @@ int32_t get_cam_data(uint8_t *inputvar)
    			break;
 
    		case SOCK_INIT :
-			#ifdef DEBUG_MODE:
+			#ifdef PRINT_USB:
    			usb_transmit_string("SOCK_INIT\r\n");
 			#endif
 
 			while((ret_connect = connect(sn, cam_destip, cam_destport)) != SOCK_OK)
 			{
-				#ifdef DEBUG_MODE
+				#ifdef PRINT_USB
 				HAL_Delay(10);
 				usb_transmit_string("Connect error return:");
 				usb_transmit_int(ret_connect);
@@ -1060,7 +1070,7 @@ int32_t close_cam_connection(void)
 
 			while((ret_connect = connect(sn, cam_destip, cam_destport)) != SOCK_OK)
 			{
-				#ifdef DEBUG_MODE
+				#ifdef PRINT_USB
 				HAL_Delay(10);
 				usb_transmit_string("Connect error return:");
 				usb_transmit_int(ret_connect);
@@ -1160,12 +1170,13 @@ float canny_filter_mod(void)
 	float *in = &floatframe_buffer;
 
     // memory allocation
-//  TODO: Find out, how calloc on stm works and why zeros are not filled
-    // memory allocation in heap	// bug? memory leak? wrong values for array? no dynamic memory alloc on stm32?
-//	float *in = calloc(nx * ny * sizeof(float), sizeof(float));
+//  TODO: Find out, how calloc() on stm32 works and why zeros are not filled
+    // bug? memory leak? wrong values for array? no dynamic memory alloc on stm32?
+//  memory allocation in heap
+//	  float *in = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *G = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *after_Gx = calloc(nx * ny * sizeof(float), sizeof(float));
-//   float *after_Gy = calloc(3200, sizeof(float));
+//    float *after_Gy = calloc(3200, sizeof(float));
 //    float *nms = calloc(nx * ny * sizeof(float), sizeof(float));
 //    float *out = malloc(nx * ny * sizeof(float));
 
@@ -1220,6 +1231,36 @@ float canny_filter_mod(void)
 
 				after_Gy[n * nx + m] = pixel;
 			    detect_edge_hysteresis( in[n * nx + m], after_Gy[n * nx + m], n * nx + m);
+
+			    #ifdef DEBUG_PRINT  // the bug is in this function
+			    float raw_input;
+			    float filter_input;
+			    int32_t position;
+			    float tmin = -0.45;
+			    float tmin = 0.45;
+			    {
+			    if(filter_input<tmin || filter_input>tmax)
+			    	{
+
+
+			    		edge_position_variable = position;  // edge detected on this position
+			    		#ifdef LCD_USAGE
+			    		if(LCDmode_flag == 1)
+			    		{
+			    			drawedge(position, yield_edge_color(edge));
+			    		}
+			    		#endif
+
+			    	}
+				usb_transmit_string("\n\edge:");
+				usb_transmit_int(position);
+				usb_transmit_string("\n\r");
+				usb_transmit_string("\n\edge:");
+				usb_transmit_int(position);
+				usb_transmit_string("\n\r");
+
+				#endif
+
 			}
 		}
 	}
