@@ -62,16 +62,16 @@ enum pixelcolor_t {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//#define PRINT_USB  // enables printing Network parameters and to USB serial monitor
-#define LCD_USAGE	// comment out to disable LCD usage
-#define DEBUG_PRINT  // normally outcommented. print debug stuff to USB serial monitor
+#define PRINT_USB  // enables printing Network parameters and to USB serial monitor
+//#define LCD_USAGE	// comment out to disable LCD usage
+//#define DEBUG_PRINT  // normally outcommented. print debug stuff to USB serial monitor
 
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
-
+#ifdef PRINT_USB
 #define NETWORK_MSG  		 "Network configuration:\r\n"
 #define IP_MSG 		 		 "  IP ADDRESS:  %d.%d.%d.%d\r\n"
 #define NETMASK_MSG	         "  NETMASK:     %d.%d.%d.%d\r\n"
@@ -89,6 +89,7 @@ enum pixelcolor_t {
   sprintf(msg, GW_MSG, netInfo.gw[0], netInfo.gw[1], netInfo.gw[2], netInfo.gw[3]);										\
   HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);															\
 } while(0)
+#endif
 
 #define CAM_BINARY_BUFSIZE 13176
 #define CAM_FLOAT_BUFFSIZE 3294
@@ -779,9 +780,6 @@ void drawedge(uint32_t position, uint32_t color)
 		column = ((position / 64))*zoomy;  // y
 		row = (64-(position % 64))*zoomx;  // x
 		ILI9341_Draw_Rectangle(column, row, zoomy, zoomx, color);
-		#ifdef DEBUG_PRINT
-		HAL_Delay(1);
-		#endif
 
 }
 
@@ -1207,13 +1205,13 @@ float canny_filter_mod(void)
                          0.0, 0.0, 0.0,
                         -1.0,-1.0,-1.0};
 
-	// copy of convolution() function for testing.
+	// copy of convolution() function.
     // only gradient in y direction is calculated since
     // edged never appear perpendicular to camera.
     // this improves execution time a lot
-	for (int m = khalf; m < nx - khalf; m++)  // m from 1 to 63
+	for (int n = khalf; n < ny - khalf; n++)  // n from 1 to 49
 	{
-		for (int n = khalf; n < ny - khalf; n++)  // n from 1 to 49
+		for (int m = khalf; m < nx - khalf; m++)  // m from 1 to 63
 		{
 			float pixel = 0.0;
 			size_t c = 0;
@@ -1228,40 +1226,9 @@ float canny_filter_mod(void)
 				}
 				//
 				// result of convolution is a gradient matrix
-
-				after_Gy[n * nx + m] = pixel;
-			    detect_edge_hysteresis( in[n * nx + m], after_Gy[n * nx + m], n * nx + m);
-
-			    #ifdef DEBUG_PRINT  // the bug is in this function
-			    float raw_input;
-			    float filter_input;
-			    int32_t position;
-			    float tmin = -0.45;
-			    float tmin = 0.45;
-			    {
-			    if(filter_input<tmin || filter_input>tmax)
-			    	{
-
-
-			    		edge_position_variable = position;  // edge detected on this position
-			    		#ifdef LCD_USAGE
-			    		if(LCDmode_flag == 1)
-			    		{
-			    			drawedge(position, yield_edge_color(edge));
-			    		}
-			    		#endif
-
-			    	}
-				usb_transmit_string("\n\edge:");
-				usb_transmit_int(position);
-				usb_transmit_string("\n\r");
-				usb_transmit_string("\n\edge:");
-				usb_transmit_int(position);
-				usb_transmit_string("\n\r");
-
-				#endif
-
 			}
+			after_Gy[n * nx + m] = pixel;
+			detect_edge_hysteresis( in[n * nx + m], after_Gy[n * nx + m], n * nx + m);
 		}
 	}
 
@@ -1325,6 +1292,7 @@ void Error_Handler(void)
 	#else
 	  while(1)
 	  {
+		// looping around and blinking
 		HAL_Delay(250);
 		HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
 	  }
