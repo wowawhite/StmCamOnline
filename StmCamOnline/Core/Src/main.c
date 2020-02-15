@@ -243,7 +243,9 @@ void testfloatarray(void)
 		}
 }
 */
-
+/* @brief this function is called if an UART interrupt is raised.
+ * it is part of the HAL driver.
+ */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
 {
   if (huart->Instance == USART1)
@@ -251,8 +253,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
 
 	if(uart_request_command == 'b')
 	{
-		HAL_UART_Transmit(&huart1, &edge_position_variable, 4, 100);  //respond with 4 bytes
-	  uart_request_flag = true;
+//		HAL_UART_Transmit(&huart1, &edge_position_variable, 4, 100);  //respond with 4 bytes
+	    uart_request_flag = true;
 	}
 
 //	HAL_UART_Transmit(&huart2, &point1, 1, 100);  // debug point 1 reached
@@ -918,16 +920,53 @@ void set_edge_flag(int32_t edgeposition)
   */
 void uart_response(int32_t edgeposition)  // this one is for testing
 {
-	int32_t firstedgeposition;
+	int32_t testnum;
+	char stringbuf[12];
+	union unionNum {
+	  int32_t num;
+	  uint8_t arr[4];
+	}union_access;
+
+
+
 	if (edge_lock_flag == 1)
 	{
-		firstedgeposition = edgeposition;
+		union_access.num = edgeposition;
 	}
 	if(uart_request_flag == true)	// if request flag is set
 	{
-		char stringbuf[10];
-		sprintf(stringbuf,  "%d", firstedgeposition);
+		testnum = 1230;
+		union_access.num = testnum;
+		sprintf(stringbuf,  "%d", testnum);
 		HAL_UART_Transmit(&huart1,  stringbuf, strlen(stringbuf) , 100);
+
+		for(int i = 0; i <= 7; i++)
+		{
+			usb_transmit_int(i);
+			usb_transmit_string("=");
+			usb_transmit_char(stringbuf[i]);  // 12
+			usb_transmit_string("\n\r");
+
+		}
+		usb_transmit_string(stringbuf);
+		usb_transmit_string("\n\r");
+
+//		for(int i = 0; i <= 3; i++)
+//		{
+//			HAL_UART_Transmit(&huart1,  union_access.arr[i], 1 , 100);
+//
+//		}
+//
+//		for(int i = 0; i <= 3; i++)
+//		{
+//			usb_transmit_byte(union_access.arr[i]);
+//			usb_transmit_string("\n\r");
+//		}
+
+		//debug
+//		usb_transmit_string("\n\rRespond:");
+//		usb_transmit_int(union_access.num);
+//		usb_transmit_string("\n\r");
 	}
 	uart_request_flag = false;  // clear request flag
 }
@@ -944,7 +983,7 @@ int32_t get_cam_data(uint8_t *inputvar)
 {
 	int32_t ret_sock = 0;
 	int32_t ret_connect = 0;
-	int32_t ret_rcv = 0;
+	int32_t ret_rcv = 0;  // Dont delete this!
 	int32_t bytes_toread;
 	int32_t bytes_received;
 	int32_t bytes_burst;
@@ -957,6 +996,7 @@ int32_t get_cam_data(uint8_t *inputvar)
 		if(((getPHYCFGR() & PHYCFGR_LNK_ON)==PHYCFGR_LNK_ON))
 		{
 			ILI9341_Fill_Screen(WHITE);
+			HAL_Delay(500);
 		}
 	}
     switch(getSn_SR(sn))
