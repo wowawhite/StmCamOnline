@@ -63,8 +63,8 @@ enum pixelcolor_t {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define PRINT_USB  // enables printing Network parameters and to USB serial monitor
-//#define LCD_USAGE	// comment out to disable LCD usage
-//#define DEBUG_PRINT  // normally outcommented. print debug stuff to USB serial monitor
+#define LCD_USAGE	// comment out to disable LCD usage
+//#define DEBUG_PRINT  // default commented. print debug switch to USB serial monitor
 
 /* USER CODE END PD */
 
@@ -101,22 +101,24 @@ enum pixelcolor_t {
 
 /* USER CODE BEGIN PV */
 
-//  values for data exchange on UART1
-volatile uint8_t uart_request_flag = 0;
-volatile char uart_request_command = 0;
 
-// if edge is detected egde flag is set to 1, otherwise set to 0
-uint8_t edge_detected_flag = 0;
+
+// if edge is detected once in a frame
+// flag is set to 1. Flag is cleared on every new frame
+uint8_t edge_lock_flag = 0;
 // if edge is detected this variable becomes the number of detection pixel
 uint32_t edge_position_variable = 0;
+
 
 const uint8_t cam_request_cartesian = 'Z';	// request cartesian data from camera
 const uint8_t cam_request_radial = 'D';	// request radial data from camera
 const uint8_t cam_request_close = 'q';  // close connection to camera(not used)
 static uint8_t msg[20]={0,};  // ethernet config debug printing
 
-uint8_t newframe_flag = 0;
-uint8_t oldframe_flag = 0;
+//  values for data exchange on UART1
+volatile uint8_t uart_request_flag = 0;
+char uart_request_command;
+
 
 //************* control parameter ***************************************
 
@@ -131,8 +133,9 @@ uint16_t local_port = 49152;	// this must not be constant and is changed in runt
 // values less tmin is falling edges (white)
 // values between tmin and tmax is noise (black)
 // values larger tmax are rising edges (white)
-const float tmin = -0.45;
-const float tmax = 0.45;
+
+const float tmin = -0.18;
+const float tmax = 0.18;
 //***********************************************************************
 
 
@@ -245,9 +248,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
 {
   if (huart->Instance == USART1)
   {
-	  if(uart_request_command == 'b')
+
+	if(uart_request_command == 'b')
 	{
-	  usb_transmit_string("\r\nuart\r\n");
+		HAL_UART_Transmit(&huart1, &edge_position_variable, 4, 100);  //respond with 4 bytes
 	  uart_request_flag = true;
 	}
 
@@ -279,9 +283,9 @@ void IO_LIBRARY_Init(void) {
 							.gw =	{ 192,  168, 178, 69 } };	// Gateway address
 
 	wizchip_setnetinfo(&netInfo);
-
-	wizchip_getnetinfo(&netInfo);
 #ifdef PRINT_USB
+	wizchip_getnetinfo(&netInfo);
+
 	PRINT_NETINFO(netInfo);
 #endif
 
@@ -374,7 +378,9 @@ int main(void)
 //	  usb_transmit_string("\n\r");
 
 	starttime = HAL_GetTick();  // milliseconds precision
+	#ifdef LCD_USAGE	// check button only if LCD is used
 	checkpushbutton();  // check if blue button was pressed
+	#endif
 	get_cam_data(cam_request_cartesian);	// get camera data
 	arrayreshaping(binarydata_buffer0);  // reshape and print raw camera data
 	canny_filter_mod();	 // filter and print filtered camera data
@@ -385,6 +391,10 @@ int main(void)
 	char stringbuf[10];
 	stoptime = HAL_GetTick();
 	difftime = stoptime - starttime;
+	if(difftime>999)
+	{
+		difftime=999;
+	}
 	sprintf(stringbuf,  "%i", difftime);
 
 
@@ -397,6 +407,7 @@ int main(void)
 	ILI9341_Draw_Text( stringbuf, 100,300, BLACK, 2, WHITE);
 	#endif
 
+	edge_lock_flag = 0;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -448,10 +459,10 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-// debug functions for usb printing stuff.
-void usb_transmit_byte(uint8_t transmit_byte)  // ok but sprintf is dangerous
+// debug functions for usb printing.
+void usb_transmit_byte(uint8_t transmit_byte)
 {
-	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_byte, 1, 100);  // alternativ strlen
+	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_byte, 1, 100);
 }
 void usb_transmit_int(int32_t transmit_int)  // ok but sprintf is dangerous
 {
@@ -466,11 +477,11 @@ void usb_transmit_uint(uint32_t transmit_uint)  // ok but sprintf is dangerous
 
 	HAL_UART_Transmit(&huart2, (uint8_t*) stringbuf, strlen(stringbuf) , 100);
 }
-void usb_transmit_char(char transmit_char)  // ok
+void usb_transmit_char(char transmit_char)
 {
 	HAL_UART_Transmit(&huart2, &transmit_char, 1, 100);
 }
-void usb_transmit_string( char *transmit_string)  //  ok
+void usb_transmit_string( char *transmit_string)
 {
 	HAL_UART_Transmit(&huart2, (uint8_t*) transmit_string, strlen(transmit_string) , 100);
 }
@@ -532,6 +543,7 @@ void checkpushbutton(void)
 	if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin)==GPIO_PIN_RESET)
 	{
 		LCDmode_flag ^= 0x01;
+		ILI9341_Fill_Screen(WHITE);
 	}
 }
 
@@ -662,7 +674,8 @@ float accessfloatarray(uint8_t *buf, uint8_t floatposition)
 }
 
 /**
-  * @brief this function yields a RGB color code from input value. it is used to draw a deep map from raw image data
+  * @brief this function yields a RGB color code from input value.
+  *	it is used to draw a deep map from raw image data.
   * @param random float value
   * @retval RGB565 color code, if input is positive. BLAC color if input negative
   */
@@ -694,7 +707,7 @@ uint32_t yield_depth_color(float input)
 			0x981F};
 
 	// depth thredshold. Non-adaptive implementation
-	const float addsome = 0.05;  // ajust this if image is blurry
+	const float addsome = 0.05;  // adjust this if image is blurry
 	const float t1 = 0.05 + addsome;
 	const float t2 = 0.1 + addsome;
 	const float t3 = 0.15 + addsome;
@@ -767,8 +780,8 @@ uint32_t yield_depth_color(float input)
 /**
   * @brief  drawing a pixel depending on absolute input array position and a color value
   * 		color value is taken from yield_edge_color()
-  * @param position - absolute array position
-  * @param color  - value from from yield_edge_color()
+  * @param uint32_t position - absolute array position
+  * @param uint32_t color  - value from from yield_edge_color()
   * @retval none
   */
 void drawedge(uint32_t position, uint32_t color)
@@ -810,6 +823,8 @@ uint32_t yield_edge_color(int8_t edge_value)
   * if an edge is detected, edge_position_variable is position of the unreliable pixel signed positive.
   * if no edge is detected, edge_position_variable is 0x7ff, wich is (dec) 32767.
   * also this function draws an edge pixel depending on previous detection.
+  * Filtered array position index is from 65 to 3134 (3070 elements).
+  * Filtered frame array is smaller  because of the convolution calculation.
   * @param raw data float value at raw array position
   * @param calculated fliter value from colvolution at raw data array position
   * @param center position from raw data input array
@@ -820,7 +835,8 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 	//	edge thredshold hysteresis
 	if(is_negative(raw_input)==true)
 	{
-		edge_position_variable = -position;  // unreliable data detected at this position
+		edge_lock_flag = 1;
+		edge_position_variable = -position;  // edge detected on this position
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
@@ -829,10 +845,9 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 		#endif
 
 
-	}else if(filter_input<tmin || filter_input>tmax)
+	} else if(filter_input<tmin || filter_input>tmax)
 	{
-
-
+		edge_lock_flag = 1;
 		edge_position_variable = position;  // edge detected on this position
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
@@ -842,7 +857,7 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 		#endif
 
 	} else {
-		edge_position_variable = 0x7FFF;  //  is 32767 in int and uint to avoid confusion
+
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
@@ -881,23 +896,15 @@ void arrayreshaping(uint8_t *arrptr)
   * @param	edge position value calculated by detect_edge_hysteresis()
   * @retval none
   */
-/* TODO: bug in this function. LED is set only if edge detected on position 0|0
- * debug idea: keep LED flag until new frame is loaded
- * first try not working properly
- */
 void set_edge_flag(int32_t edgeposition)
 {
-	if (edgeposition != 0x7FFF)
+
+	if (edge_lock_flag == 1)
 	{
 		set_LED(1);  // on
 		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 1);
+
 	} else {
-//		if(oldframe_flag == newframe_flag)
-//		{
-//			set_LED(0);  // off
-//			HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
-//			oldframe_flag = newframe_flag;
-//		}
 		set_LED(0);  // off
 		HAL_GPIO_WritePin(USART_DATAFLAG_GPIO_Port, USART_DATAFLAG_Pin, 0);
 	}
@@ -911,10 +918,15 @@ void set_edge_flag(int32_t edgeposition)
   */
 void uart_response(int32_t edgeposition)  // this one is for testing
 {
+	int32_t firstedgeposition;
+	if (edge_lock_flag == 1)
+	{
+		firstedgeposition = edgeposition;
+	}
 	if(uart_request_flag == true)	// if request flag is set
 	{
 		char stringbuf[10];
-		sprintf(stringbuf,  "%i", edgeposition);
+		sprintf(stringbuf,  "%d", firstedgeposition);
 		HAL_UART_Transmit(&huart1,  stringbuf, strlen(stringbuf) , 100);
 	}
 	uart_request_flag = false;  // clear request flag
@@ -922,11 +934,11 @@ void uart_response(int32_t edgeposition)  // this one is for testing
 
 /**
   * @brief this function requests data by using the w5500 chip socket feature.
-  * 		after 5ms delay receiving buffer is read to 'binarydata_buffer0' global array
+  * 		after 55ms delay receiving buffer is read to 'binarydata_buffer0' global array
   * 		the socket is kept alive all the time so reconnect is not needed.
   *
-  * @param none
-  * @retval 0 when function finishes successfully
+  * @param uint8_t recieved data is written in this array
+  * @retval int32_t 0 when function finishes successfully
   */
 int32_t get_cam_data(uint8_t *inputvar)
 {
@@ -938,8 +950,15 @@ int32_t get_cam_data(uint8_t *inputvar)
 	int32_t bytes_burst;
 	uint16_t size = 0;
 	uint16_t sn = 0; // using only socket 0
-	newframe_flag ^= 1;  // toggle on new frame
-	while(!getPHYCFGR());  // phy link check
+	while(!((getPHYCFGR() & PHYCFGR_LNK_ON)==PHYCFGR_LNK_ON)) // phy link check
+	{
+		usb_transmit_string("\r\n NETWORK Cable not connected \r\n");
+		ILI9341_Draw_Text( "ETH CABLE ERROR", 10,287, RED, 2, WHITE);
+		if(((getPHYCFGR() & PHYCFGR_LNK_ON)==PHYCFGR_LNK_ON))
+		{
+			ILI9341_Fill_Screen(WHITE);
+		}
+	}
     switch(getSn_SR(sn))
     {
     	case SOCK_ESTABLISHED :
@@ -952,7 +971,7 @@ int32_t get_cam_data(uint8_t *inputvar)
 				#endif
 
     		if((size = getSn_RX_RSR(sn)) > 0)
-    		{ // If data in rx buffer
+    		{  // If data in rx buffer
     			bytes_toread = CAM_BINARY_BUFSIZE;
     			bytes_received = 0;
     			while(bytes_toread>=1)
@@ -960,20 +979,20 @@ int32_t get_cam_data(uint8_t *inputvar)
     				bytes_burst = recv(sn, &binarydata_buffer0[bytes_received], bytes_toread);
     				bytes_received = bytes_received + bytes_burst;
     				bytes_toread = CAM_BINARY_BUFSIZE - bytes_received;
-
 				}
     		} else {
 				#ifdef PRINT_USB:
-    			usb_transmit_string("\r\n Transmission error \r\n");
-				usb_transmit_int(size);
+    			usb_transmit_string("\r\n Stream unstable \r\n");
 				#endif
+
+//				HAL_Delay(100);  // delay for network reply needed
 
     		}
     		break;
    		case SOCK_CLOSE_WAIT :
 			if((ret_connect=disconnect(sn)) != SOCK_OK) return ret_connect;
 			#ifdef PRINT_USB:
-			usb_transmit_string("CloseOK\r\n");
+			usb_transmit_string("SockWait\r\n");
 			#endif
    			break;
    		case SOCK_CLOSED :
@@ -1007,6 +1026,8 @@ int32_t get_cam_data(uint8_t *inputvar)
 				usb_transmit_int(ret_connect);
 				usb_transmit_string("r\n");
 				usb_transmit_string("Reconnecting.\r\n");
+				#endif
+				#ifdef LCD_USAGE
 				#endif
 				return ret_connect;
 			}
@@ -1070,9 +1091,8 @@ int32_t close_cam_connection(void)
 			{
 				#ifdef PRINT_USB
 				HAL_Delay(10);
-				usb_transmit_string("Connect error return:");
+				usb_transmit_string("\r\nConnect error return:");
 				usb_transmit_int(ret_connect);
-				usb_transmit_string("r\n");
 				usb_transmit_string("Reconnecting.\r\n");
 				#endif
 				return ret_connect;
