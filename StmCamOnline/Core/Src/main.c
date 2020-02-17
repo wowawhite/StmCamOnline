@@ -107,7 +107,7 @@ enum pixelcolor_t {
 // flag is set to 1. Flag is cleared on every new frame
 uint8_t edge_lock_flag = 0;
 // if edge is detected this variable becomes the number of detection pixel
-uint32_t edge_position_variable = 0;
+int32_t edge_position_variable = 0;
 
 
 const uint8_t cam_request_cartesian = 'Z';	// request cartesian data from camera
@@ -243,7 +243,9 @@ void testfloatarray(void)
 		}
 }
 */
-/* @brief this function is called if an UART interrupt is raised.
+/* @brief this function is called if an UART interrupt is raised,
+ * means if UART1 received something. Its only purpose is to set the
+ *  uart_request_flag and re-enable the interrupt.
  * it is part of the HAL driver.
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
@@ -253,15 +255,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)  // RX callback
 
 	if(uart_request_command == 'b')
 	{
-//		HAL_UART_Transmit(&huart1, &edge_position_variable, 4, 100);  //respond with 4 bytes
 	    uart_request_flag = true;
 	}
-
-//	HAL_UART_Transmit(&huart2, &point1, 1, 100);  // debug point 1 reached
-//    /* Transmit one byte with 100 ms timeout */
-//    HAL_UART_Transmit(&huart2, &byte, 1, 100);
-
-    /* Receive one byte in interrupt mode */
+    /* Re-enable UART1 interrupt */
     HAL_UART_Receive_IT(&huart1, &uart_request_command, 1);  // have to enable interrupt again
   }
 }
@@ -361,7 +357,7 @@ int main(void)
   uint32_t starttime;
   uint32_t stoptime;
   uint32_t difftime;
-  HAL_Delay(1000);
+  HAL_Delay(500);
   set_LED(true);  // enable led
 
   while (1)
@@ -397,7 +393,7 @@ int main(void)
 	{
 		difftime=999;
 	}
-	sprintf(stringbuf,  "%i", difftime);
+	sprintf(stringbuf,  "%d", difftime);
 
 
 	#ifdef PRINT_USB
@@ -822,11 +818,15 @@ uint32_t yield_edge_color(int8_t edge_value)
   * @brief this function detects edge, no edge or unreliable pixel
   * with tmin, tmax and input pixel. if an input pixel is unreliable,
   * edge_position_variable is position of the unreliable pixel signed negative.
-  * if an edge is detected, edge_position_variable is position of the unreliable pixel signed positive.
-  * if no edge is detected, edge_position_variable is 0x7ff, wich is (dec) 32767.
-  * also this function draws an edge pixel depending on previous detection.
+  * If an edge is detected, edge_position_variable is position of the unreliable pixel signed positive.
+  * The algorithm sets always the first detected edge or unreliable position and ignores
+  * further detected positions. The position is always reset on every new frame.
+  * If no edge is detected, edge_position_variable is 0x7fff(HEX), witch is  32767(DEC),
+  * but if an edge or unreliable pixel was detected before, it wont be overwritten.
+  * Also this function draws an edge pixel depending on previous detection.
   * Filtered array position index is from 65 to 3134 (3070 elements).
   * Filtered frame array is smaller  because of the convolution calculation.
+  *
   * @param raw data float value at raw array position
   * @param calculated fliter value from colvolution at raw data array position
   * @param center position from raw data input array
@@ -837,8 +837,12 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 	//	edge thredshold hysteresis
 	if(is_negative(raw_input)==true)
 	{
-		edge_lock_flag = 1;
-		edge_position_variable = -position;  // edge detected on this position
+		if(edge_lock_flag == 0)
+		{
+			edge_lock_flag = 1;
+			edge_position_variable = -position;  // edge detected on this position
+		}
+
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
@@ -849,8 +853,11 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 
 	} else if(filter_input<tmin || filter_input>tmax)
 	{
-		edge_lock_flag = 1;
-		edge_position_variable = position;  // edge detected on this position
+		if(edge_lock_flag == 0)
+		{
+			edge_lock_flag = 1;
+			edge_position_variable = position;  // edge detected on this position
+		}
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
@@ -859,7 +866,10 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 		#endif
 
 	} else {
-
+		if(edge_lock_flag != 1)
+		{
+			edge_position_variable = 0x7fff;  // edge detected on this position
+		}
 		#ifdef LCD_USAGE
 		if(LCDmode_flag == 1)
 		{
@@ -867,6 +877,7 @@ void detect_edge_hysteresis( float raw_input, float filter_input, int32_t positi
 		}
 		#endif
 	}
+
 }
 
 /**
@@ -920,53 +931,31 @@ void set_edge_flag(int32_t edgeposition)
   */
 void uart_response(int32_t edgeposition)  // this one is for testing
 {
-	int32_t testnum;
 	char stringbuf[12];
 	union unionNum {
 	  int32_t num;
 	  uint8_t arr[4];
 	}union_access;
 
+	char string_termination = '\0';
+	union_access.num = edgeposition;
 
-
-	if (edge_lock_flag == 1)
+	if(uart_request_flag == true)	// if arduino request data
 	{
-		union_access.num = edgeposition;
-	}
-	if(uart_request_flag == true)	// if request flag is set
-	{
-		testnum = 1230;
-		union_access.num = testnum;
-		sprintf(stringbuf,  "%d", testnum);
-		HAL_UART_Transmit(&huart1,  stringbuf, strlen(stringbuf) , 100);
+		// put int32_t into 4 bytes and terminate the string
+		stringbuf[0] = union_access.arr[0];
+		stringbuf[1] = union_access.arr[1];
+		stringbuf[2] = union_access.arr[2];
+		stringbuf[3] = union_access.arr[3];
+		stringbuf[4] = string_termination;
 
-		for(int i = 0; i <= 7; i++)
-		{
-			usb_transmit_int(i);
-			usb_transmit_string("=");
-			usb_transmit_char(stringbuf[i]);  // 12
-			usb_transmit_string("\n\r");
+		// send 4 bytes and string termiation char
+		HAL_UART_Transmit(&huart1,  stringbuf, 5 , 100);
 
-		}
-		usb_transmit_string(stringbuf);
+		usb_transmit_string("\n\rSending:");
+		usb_transmit_uint(union_access.num);
 		usb_transmit_string("\n\r");
 
-//		for(int i = 0; i <= 3; i++)
-//		{
-//			HAL_UART_Transmit(&huart1,  union_access.arr[i], 1 , 100);
-//
-//		}
-//
-//		for(int i = 0; i <= 3; i++)
-//		{
-//			usb_transmit_byte(union_access.arr[i]);
-//			usb_transmit_string("\n\r");
-//		}
-
-		//debug
-//		usb_transmit_string("\n\rRespond:");
-//		usb_transmit_int(union_access.num);
-//		usb_transmit_string("\n\r");
 	}
 	uart_request_flag = false;  // clear request flag
 }
@@ -1102,7 +1091,7 @@ int32_t close_cam_connection(void)
      // send data here:
     		send(sn, &cam_request_close, 1);
     		// wait here between response
-    	    HAL_Delay(100);  // delay for network reply needed
+    	    HAL_Delay(100);  // delay for closing reply
     		break;
    		case SOCK_CLOSE_WAIT :
 			if((ret_connect=disconnect(sn)) != SOCK_OK) return ret_connect;
