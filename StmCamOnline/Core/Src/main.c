@@ -929,7 +929,7 @@ void set_edge_flag(int32_t edgeposition)
   * @param	edge position value calculated by detect_edge_hysteresis()
   * @retval none
   */
-void uart_response(int32_t edgeposition)  // this one is for testing
+void uart_response(int32_t edgeposition)
 {
 	char stringbuf[12];
 	union unionNum {
